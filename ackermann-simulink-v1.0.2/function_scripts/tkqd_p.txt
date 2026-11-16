@@ -1,0 +1,55 @@
+function [pd, pdot] = tkqd_p(t,x,route)
+%#codegen
+% Reference generator using A*-computed global path, received as input.
+% Do NOT copy route coordinates into MATLAB Function source.
+% route is an N-by-2 matrix; supplied by GlobalRoute_ASTAR in the model.
+n = size(route,1);
+q = route(n,:);
+th = 0.0;
+if n >= 2
+    d = route(n,:) - route(n-1,:);
+    th = atan2(d(2),d(1));
+end
+if n < 2
+    pd = [q(1); q(2); th];
+    pdot = [0;0];
+    return;
+end
+nearestD = 1e20;
+bestSeg = 1;
+bestT = 0.0;
+for j=1:(n-1)
+    d = route(j+1,:) - route(j,:);
+    r = [x(1), x(2)] - route(j,:);
+    a = max(dot(d,d),1e-12);
+    z = max(0.0,min(1.0,dot(r,d)/a));
+    err = r - z*d;
+    dd = dot(err,err);
+    if dd < nearestD
+        nearestD = dd;
+        bestSeg = j;
+        bestT = z;
+    end
+end
+sWanted = 2.5; % lookahead along dynamic A* path, meters
+for j=1:(bestSeg-1)
+    d = route(j+1,:) - route(j,:);
+    sWanted = sWanted + sqrt(dot(d,d));
+end
+d = route(bestSeg+1,:) - route(bestSeg,:);
+sWanted = sWanted + bestT*sqrt(dot(d,d));
+for j=1:(n-1)
+    d = route(j+1,:) - route(j,:);
+    len = sqrt(dot(d,d));
+    if sWanted <= len || j == n-1
+        z = max(0,min(1,sWanted/max(len,1e-12)));
+        q = route(j,:) + z*d;
+        th = atan2(d(2),d(1));
+        break;
+    end
+    sWanted = sWanted - len;
+end
+pd = [q(1); q(2); th];
+vr = 1.0*(1-exp(-max(t,0)/0.8));
+pdot = [vr*cos(th); vr*sin(th)];
+end

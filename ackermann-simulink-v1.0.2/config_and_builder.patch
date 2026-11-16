@@ -1,0 +1,44 @@
+diff --git a/ackermann_cfg.m b/ackermann_cfg.m
+@@
+-% Collision-free global guide route for local planning, in meters.
+-% This is not claimed to be a computed global optimal path.
+-c.route = [0.0 0.0;
+-           2.2 1.0;
+-           5.3 2.70;
+-           8.25 3.45;
+-          10.4 2.75;
+-          13.3 1.50;
+-          16.0 0.60];
++% Recalculate a global route from obstacles and body collision envelope.
++c.globalGridResolution = 0.20;
++c.globalMapPadding = 2.0;
++c.globalRobotRadius = hypot(c.L/2+c.bodyLength/2, c.bodyWidth/2) + c.collisionMargin;
++c.route = ackermann_global_route(c);
+diff --git a/build_ackermann_giaotrinh.m b/build_ackermann_giaotrinh.m
+@@
+-set_param(mdl,'InitFcn',['c=ackermann_cfg(); pBook=' paramExpr ';']);
++set_param(mdl,'InitFcn',['c=ackermann_cfg(); pBook=' paramExpr '; bookRoute=c.route;']);
+ pBook=eval(paramExpr); %#ok<NASGU>
+ assignin('base','pBook',pBook);
++assignin('base','bookRoute',c.route);
+@@
+ % ===== TOP LEVEL LECTURE-STYLE BLOCKS =====
++% Share the same A* route between TKQD reference and local planners.
++add_block('simulink/Sources/Constant',[mdl '/GlobalRoute_ASTAR'], ...
++    'Value','bookRoute','Position',[31 167 115 193]);
+ add_block('simulink/Sources/Clock',[mdl '/Clock'], ...
+    'Position',[35 65 75 100]);
+-add_math_subsystem(mdl,'TKQD_cho_P',{'t','X'}, {'Pd','Pd_dot'}, ...
++add_math_subsystem(mdl,'TKQD_cho_P',{'t','X','Route'}, {'Pd','Pd_dot'}, ...
+@@
+ link(mdl,'Clock/1','TKQD_cho_P/1');
+ link(mdl,'State_to_TKQD/1','TKQD_cho_P/2');
++link(mdl,'GlobalRoute_ASTAR/1','TKQD_cho_P/3');
+@@
+-logs={'StateLog','RearForceLog','SteerLog','CommandLog','AuxLog','BandLog','MetaLog','P1Log','P1desiredLog'};
+-from={'Robot_Newton_Euler/1','Robot_Newton_Euler/2', ...
++logs={'GlobalRouteLog','StateLog','RearForceLog','SteerLog','CommandLog','AuxLog','BandLog','MetaLog','P1Log','P1desiredLog'};
++from={'GlobalRoute_ASTAR/1','Robot_Newton_Euler/1','Robot_Newton_Euler/2', ...
+@@
+-   'GIAO TRINH 4.19: TKQD -> Sai so P1 -> Kp -> Transform -> DWA/TEB -> Robot -> hoi tiep');
++   'A* TU DONG TU c.obstacles -> TKQD -> P1 -> Kp -> Transform -> DWA/TEB -> Robot');

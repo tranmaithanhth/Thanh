@@ -1,0 +1,11 @@
+*** build_ackermann_giaotrinh.m (before)
+--- build_ackermann_giaotrinh.m (after)
+@@
+-try
+-    set_param(mdl,'SimulationCommand','update');
+-catch ME
+-    warning('book:compile','Created model but update failed: %s',ME.message);
+-end
++% Fail on real compilation errors instead of silently saving a broken model.
++set_param(mdl,'SimulationCommand','update');
+ save_system(mdl,fullfile(root,[mdl '.slx']));

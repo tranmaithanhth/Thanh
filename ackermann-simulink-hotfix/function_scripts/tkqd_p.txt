@@ -1,0 +1,47 @@
+function [pd, pdot] = tkqd_p(t,x)
+%#codegen
+% Route-reference point P and feedforward speed.
+% This is a route lookahead (not a new obstacle planner).
+route = [0.0 0.0; 2.2 1.0; 5.3 2.70; 8.25 3.45; ...
+    10.4 2.75; 13.3 1.50; 16.0 0.60];
+nearestD = 1e12;
+bestSeg = 1;
+bestT = 0;
+for j=1:6
+    d = route(j+1,:)-route(j,:);
+    r = [x(1),x(2)]-route(j,:);
+    a = max(dot(d,d),1e-12);
+    z = max(0,min(1,dot(r,d)/a));
+    r = r-z*d;
+    dd = dot(r,r);
+    if dd<nearestD
+        nearestD=dd;bestSeg=j;bestT=z;
+    end
+end
+s=0;
+for j=1:(bestSeg-1)
+    d=route(j+1,:)-route(j,:);s=s+sqrt(dot(d,d));
+end
+d=route(bestSeg+1,:)-route(bestSeg,:);
+s=s+bestT*sqrt(dot(d,d));
+sWanted=s+2.5;
+% Initialize both outputs before the search loop. MATLAB Coder requires
+% every execution path to assign q and th (including unexpected paths).
+q = route(7,:);
+dlast = route(7,:) - route(6,:);
+th = atan2(dlast(2),dlast(1));
+for j=1:6
+    d=route(j+1,:)-route(j,:);len=sqrt(dot(d,d));
+    if sWanted<=len || j==6
+        z=min(1,max(0,sWanted/max(len,1e-10)));
+        q=route(j,:)+z*d;
+        th=atan2(d(2),d(1));
+        break;
+    end
+    sWanted=sWanted-len;
+end
+pd=[q(1);q(2);th];
+% Smooth feedforward at simulation start; desired speed in m/s.
+vr = 1.0*(1-exp(-max(t,0)/0.8));
+pdot=[vr*cos(th);vr*sin(th)];
+end

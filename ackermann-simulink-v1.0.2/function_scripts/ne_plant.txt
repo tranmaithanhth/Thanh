@@ -1,0 +1,31 @@
+function [dx,rear,steer,cmd,aux] = ne_plant(x,tau,us,p)
+%#codegen
+% Newton-Euler non-slip reduced vehicle + wheel Euler equations.
+% Five ODE states [xP yP theta v psi]. No sliding tire model.
+m=p(1);Jz=p(2);L=p(3);B=p(4);b=p(5);Rw=p(6);
+Jw=p(7);cv=p(8);T=p(9);K=p(10);
+psi=x(5);v=x(4);th=x(3);
+k=tan(psi)/L;kp=(1+tan(psi)^2)/L;
+A=1-B*k/2;Ap=-B*kp/2;
+D=1+B*k/2;Dp=B*kp/2;
+Q=L*k;Qp=L*kp;
+gFL=hypot(A,Q);gFR=hypot(D,Q);
+g=[gFL,gFR,A,D];
+gp=[(A*Ap+Q*Qp)/max(gFL,1e-10), ...
+    (D*Dp+Q*Qp)/max(gFR,1e-10),Ap,Dp];
+I=Jz+m*b*b;
+M=m+I*k*k+Jw*sum(g.^2)/Rw^2;
+H=I*k*kp+Jw*sum(g.*gp)/Rw^2;
+C=cv*sum(g.^2);
+dpsi=(-psi+K*us)/T;
+dv=(tau/Rw-H*v*dpsi-C*v)/M;
+w=k*v;
+dx=[v*cos(th);v*sin(th);w;dv;dpsi];
+% Wheel Euler balances: road-on-wheel longitudinal forces (N).
+tw=[0,0,tau/2,tau/2];
+Fx=tw/Rw-(Jw/Rw^2)*(g*dv+gp*v*dpsi)-cv*g*v;
+rear=[Fx(3);Fx(4);tau/(2*Rw);tau/(2*Rw)];
+steer=[atan2(Q,A);atan2(Q,D)];
+cmd=[tau;us;w];
+aux=[g(3)*v/Rw;g(4)*v/Rw;M;C];
+end

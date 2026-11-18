@@ -1,0 +1,5 @@
+function p1 = toado_p1(x)
+%#codegen
+b1 = 0.10;
+p1 = [x(1)+b1*cos(x(3)); x(2)+b1*sin(x(3))];
+end

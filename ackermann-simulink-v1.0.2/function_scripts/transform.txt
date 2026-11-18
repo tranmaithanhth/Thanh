@@ -1,0 +1,18 @@
+function guide = transform_p1(u,x)
+%#codegen
+% Eq. (4.54) reference: inverse transform from P1 speed to v,omega.
+% For Ackermann, omega and v are not independent: omega=v*tan(psi)/L.
+b1=0.10;
+L=0.80;
+maxV=1.60;
+maxPsi=0.52;
+th=x(3);
+v_nom=cos(th)*u(1)+sin(th)*u(2);
+omega_nom=(-sin(th)*u(1)+cos(th)*u(2))/b1;
+v_nom=max(0,min(maxV,v_nom));
+% Saturate nonholonomic curvature; cannot spin in place at v=0.
+vden=max(v_nom,0.20);
+psi_nom=atan2(L*omega_nom,vden);
+psi_nom=max(-maxPsi,min(maxPsi,psi_nom));
+guide=[v_nom;psi_nom];
+end

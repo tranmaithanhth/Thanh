@@ -1,0 +1,29 @@
+function [tau,us] = torque_steer_controller(x,ref,p)
+%#codegen
+% One total axle torque, one steering command.
+% Params: m,Jz,L,B,b,Rw,Jw,cv,T,K,maxPsi,maxPsiRate,maxTorque,maxA,kv,maxSpeed
+m=p(1);Jz=p(2);L=p(3);B=p(4);b=p(5);Rw=p(6);
+Jw=p(7);cv=p(8);T=p(9);K=p(10);
+maxPsi=p(11);maxRate=p(12);maxTorque=p(13);maxA=p(14);
+kv=p(15);maxSpeed=p(16);
+psi=max(-maxPsi,min(maxPsi,x(5)));v=x(4);
+vref=max(0,min(maxSpeed,ref(1)));
+psiref=max(-maxPsi,min(maxPsi,ref(2)));
+dpsi=max(-maxRate,min(maxRate,(psiref-psi)/T));
+us=(psi+T*dpsi)/K;
+k=tan(psi)/L;kp=(1+tan(psi)^2)/L;
+A=1-B*k/2;Ap=-B*kp/2;
+D=1+B*k/2;Dp=B*kp/2;
+Q=L*k;Qp=L*kp;
+gFL=hypot(A,Q);gFR=hypot(D,Q);
+g=[gFL,gFR,A,D];
+gp=[(A*Ap+Q*Qp)/max(gFL,1e-10), ...
+    (D*Dp+Q*Qp)/max(gFR,1e-10), Ap,Dp];
+I=Jz+m*b*b;
+M=m+I*k*k+Jw*sum(g.^2)/Rw^2;
+H=I*k*kp+Jw*sum(g.*gp)/Rw^2;
+C=cv*sum(g.^2);
+acmd=max(-maxA,min(maxA,kv*(vref-v)));
+tau=Rw*(M*acmd+H*v*dpsi+C*v);
+tau=max(-maxTorque,min(maxTorque,tau));
+end

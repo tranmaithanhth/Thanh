@@ -1,0 +1,30 @@
+digraph G {
+    graph [rankdir=LR, bgcolor="white", pad="0.28", ranksep="0.58", nodesep="0.23", fontname="DejaVu Sans", fontsize=16, label="SƠ ĐỒ KHỐI ĐỀ XUẤT – SIMULINK THEO HÌNH 4.19 (BẢN ACKERMANN + DWA/TEB)", labelloc=t];
+    node [shape=box, style="rounded,filled", color="#64748b", fillcolor="#eff6ff", fontname="DejaVu Sans", fontsize=11, margin="0.20,0.15"];
+    edge [color="#64748b", arrowsize=0.65, penwidth=1.5];
+    clock [label="Clock\n(t)", fillcolor="#f1f5f9"];
+    tkqdP [label="TKQĐ cho P\n(điểm trên tuyến)"];
+    tkqdP1 [label="TKQĐ cho P1\n(vị trí đặt + vận tốc đặt)"];
+    minus [label="Σ (+/−)\nSai số P1",shape=box, fillcolor="#fff7ed"];
+    kp [label="Kp = 5\nHiệu chỉnh sai số", fillcolor="#fefce8"];
+    plus [label="Σ (++)\nFeedforward + phản hồi",shape=box,fillcolor="#fff7ed"];
+    trans [label="Transform\n(P1 → v, ψ)",fillcolor="#e0f2fe"];
+    dwa [label="DWA\nLấy mẫu và tránh vật cản",fillcolor="#ecfdf5"];
+    teb [label="TEB rút gọn\nTối ưu dải quỹ đạo",fillcolor="#ecfdf5"];
+    sw [label="Manual Switch\nCHỌN DWA / TEB",fillcolor="#dcfce7",color="#16a34a"];
+    sat [label="Saturation\nGiới hạn v, ψ"];
+    robot [label="ROBOT NEWTON–EULER\n\nMômen tổng τd, lệnh lái us\n5 Integrator: xP, yP, θ, v, ψ",fillcolor="#dbeafe",color="#2563eb",penwidth=2];
+    toado [label="Tọa độ P1\n(từ xP, yP, θ)"];
+    view [label="Sa bàn động\nFx bánh sau + góc lái",fillcolor="#fef2f2"];
+    clock -> tkqdP -> tkqdP1 -> minus -> kp -> plus -> trans;
+    tkqdP1 -> plus [style=dashed, label="P1_dot"];
+    trans -> dwa;trans -> teb;
+    dwa -> sw;teb -> sw;
+    sw -> sat -> robot -> view;
+    robot -> toado [style=dashed];
+    toado -> minus [constraint=false,style=dashed,color="#d97706",label="Phản hồi P1"];
+    robot -> trans [constraint=false,style=dashed,color="#2563eb",label="θ"];
+    robot -> dwa [constraint=false,style=dashed,color="#2563eb"];
+    robot -> teb [constraint=false,style=dashed,color="#2563eb"];
+    {rank=same;dwa;teb}
+}

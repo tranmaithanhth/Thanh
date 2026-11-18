@@ -1,0 +1,8 @@
+function [p1d, p1dot] = tkqd_p1(pd, pdot)
+%#codegen
+% Desired point ahead of reference P by lookahead b1=0.1 m.
+% Piecewise route tangents mean p1dot is an approximate feedforward.
+b1=0.10;
+p1d=[pd(1)+b1*cos(pd(3));pd(2)+b1*sin(pd(3))];
+p1dot=pdot;
+end

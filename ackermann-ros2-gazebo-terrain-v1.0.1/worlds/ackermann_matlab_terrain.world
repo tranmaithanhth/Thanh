@@ -1,0 +1,60 @@
+<?xml version="1.0"?>
+<sdf version="1.6">
+ <world name="ackermann_matlab_terrain">
+  <gravity>0 0 -9.81</gravity>
+  <physics type="ode"><max_step_size>0.001</max_step_size><real_time_update_rate>1000</real_time_update_rate></physics>
+  <include><uri>model://sun</uri></include>
+  <!-- No ground_plane: it would collide with the shaped heightmap. -->
+  <include><uri>model://ackermann_matlab_terrain</uri></include>
+  <model name="obstacle_01">
+    <static>true</static>
+    <pose>4.100000 0.300000 0.953881 0 0 0</pose>
+    <link name="body">
+      <collision name="collision"><geometry><cylinder><radius>0.750000</radius><length>1.200000</length></cylinder></geometry></collision>
+      <visual name="visual"><geometry><cylinder><radius>0.750000</radius><length>1.200000</length></cylinder></geometry>
+        <material><ambient>0.85 0.24 0.18 1</ambient><diffuse>0.85 0.24 0.18 1</diffuse></material>
+      </visual>
+    </link>
+  </model>
+  <model name="obstacle_02">
+    <static>true</static>
+    <pose>7.300000 1.150000 1.623318 0 0 0</pose>
+    <link name="body">
+      <collision name="collision"><geometry><cylinder><radius>0.720000</radius><length>1.200000</length></cylinder></geometry></collision>
+      <visual name="visual"><geometry><cylinder><radius>0.720000</radius><length>1.200000</length></cylinder></geometry>
+        <material><ambient>0.85 0.24 0.18 1</ambient><diffuse>0.85 0.24 0.18 1</diffuse></material>
+      </visual>
+    </link>
+  </model>
+  <model name="obstacle_03">
+    <static>true</static>
+    <pose>10.150000 0.350000 1.627973 0 0 0</pose>
+    <link name="body">
+      <collision name="collision"><geometry><cylinder><radius>0.760000</radius><length>1.200000</length></cylinder></geometry></collision>
+      <visual name="visual"><geometry><cylinder><radius>0.760000</radius><length>1.200000</length></cylinder></geometry>
+        <material><ambient>0.85 0.24 0.18 1</ambient><diffuse>0.85 0.24 0.18 1</diffuse></material>
+      </visual>
+    </link>
+  </model>
+  <model name="obstacle_04">
+    <static>true</static>
+    <pose>12.400000 3.700000 1.259935 0 0 0</pose>
+    <link name="body">
+      <collision name="collision"><geometry><cylinder><radius>0.730000</radius><length>1.200000</length></cylinder></geometry></collision>
+      <visual name="visual"><geometry><cylinder><radius>0.730000</radius><length>1.200000</length></cylinder></geometry>
+        <material><ambient>0.85 0.24 0.18 1</ambient><diffuse>0.85 0.24 0.18 1</diffuse></material>
+      </visual>
+    </link>
+  </model>
+  <model name="goal_marker">
+   <static>true</static><pose>16.000000 0.600000 0.058083 0 0 0</pose>
+   <link name="marker_link">
+    <!-- Visual-only marker: cannot prevent robot reaching the goal. -->
+    <visual name="visual"><geometry><cylinder><radius>0.22</radius><length>0.04</length></cylinder></geometry>
+     <material><ambient>0.05 0.7 0.15 1</ambient><diffuse>0.05 0.7 0.15 1</diffuse></material>
+    </visual>
+   </link>
+  </model>
+  <gui fullscreen="0"><camera name="camera"><pose>9 -13 13 0 0.55 1.57</pose><view_controller>orbit</view_controller></camera></gui>
+ </world>
+</sdf>

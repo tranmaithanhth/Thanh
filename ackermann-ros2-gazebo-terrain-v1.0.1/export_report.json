@@ -1,0 +1,27 @@
+{
+  "matlab_height_function": "terrain3d_height.m v1.0.4",
+  "grid_pixels": [
+    257,
+    257
+  ],
+  "terrain_bounds_m": [
+    -2.0,
+    19.0,
+    -5.0,
+    7.0
+  ],
+  "height_min_m": -0.06029298339894864,
+  "height_max_m": 1.1110618766359461,
+  "height_range_m": 1.1713548600348949,
+  "png_quantization_max_error_m": 0.0022967570784344638,
+  "slope_up_m": [
+    2.5,
+    6.5
+  ],
+  "slope_down_m": [
+    10.6,
+    14.6
+  ],
+  "obstacle_count": 4,
+  "heightmap_image": "models/ackermann_matlab_terrain/terrain_height.png"
+}

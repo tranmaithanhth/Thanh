@@ -1,0 +1,12 @@
+{
+  "terrainHeight": 1.05,
+  "terrainRiseX": [2.5, 6.5],
+  "terrainFallX": [10.6, 14.6],
+  "terrainCamber": 0.045,
+  "terrainRipple": 0.018,
+  "terrainBounds": [-2.0, 19.0, -5.0, 7.0],
+  "flip_y": true,
+  "start": [0.0, 0.0],
+  "goal": [16.0, 0.6],
+  "obstacles": [[4.1, 0.3, 0.75], [7.3, 1.15, 0.72], [10.15, 0.35, 0.76], [12.4, 3.70, 0.73]]
+}

@@ -27,6 +27,41 @@ class TestTerrainAndAutonomy(unittest.TestCase):
             self.assertAlmostEqual(hx,numx,places=4)
             self.assertAlmostEqual(hy,numy,places=4)
 
+    def test_grade_threshold_allows_real_ramp(self):
+        # At x≈4.5, y=-2 the MATLAB terrain gradient is slightly above 0.50.
+        # Old 0.50 cutoff blocked the straight/lower corridor, forcing an
+        # almost-tangent upper route around the obstacle.
+        h,hx,hy=terrain(4.5,-2.1)
+        self.assertGreater(math.hypot(hx,hy),0.50)
+        self.assertLess(math.hypot(hx,hy),self.cfg['max_terrain_grade'])
+        self.assertTrue(self.m.safe_xy(4.5,-2.1,margin=self.m.route_margin))
+
+    def test_astar_leaves_route_clearance(self):
+        route=self.m.astar((-0.4,-2.0))
+        self.assertGreaterEqual(self.m.route_margin,0.30)
+        for a,b in zip(route,route[1:]):
+            length=math.dist(a,b)
+            for k in range(max(2,math.ceil(length/0.05))+1):
+                t=k/max(2,math.ceil(length/0.05))
+                x=a[0]+t*(b[0]-a[0])
+                y=a[1]+t*(b[1]-a[1])
+                for ox,oy,r in self.m.obstacles:
+                    self.assertGreater(math.hypot(x-ox,y-oy),
+                                       r+self.m.infl+self.m.route_margin-0.000001)
+
+    def test_forward_progress_not_negative_when_stopped(self):
+        self.m.astar((-0.4,-2.0))
+        p=Pose(1.8,-2.05,0.0,0.03)
+        F,delta,dist,dev,vref=self.m.local_force_steer(p)
+        self.assertGreater(vref,0.25)
+        self.assertGreaterEqual(F,self.m.min_progress_force-1e-6)
+
+    def test_rollout_keeps_speed_above_cruise_setpoint(self):
+        p=Pose(0.0,-2.0,0.0,1.05)
+        next_p=self.m.step(p,0.0,0.0,0.1)
+        self.assertGreater(next_p.v,self.cfg['max_speed_m_s'])
+        self.assertLessEqual(next_p.v,self.cfg['physical_max_speed_m_s'])
+
     def test_astar_segments_clear(self):
         for start in [(-0.4,-2.0),(-4,-2),(0,0)]:
             route=self.m.astar(start)

@@ -92,3 +92,7 @@ bash drive_robot_on_terrain.sh
 Robot bắt đầu ở `(x=0,y=-2,z=0.10,yaw=0)` và chạy chậm dọc +X để thử lên/xuống dốc, tránh các vật cản trụ. Xem thêm [README_ROBOT.md](README_ROBOT.md). Đây là demo di chuyển thẳng; **chưa phải DWA/TEB tự động đến đích**.
 
 **Nếu robot trông như đang lơ lửng:** nhìn góc dưới trái Gazebo. Khi có nút tam giác `▶ Play` và **Real Time Factor = 0**, mô phỏng đang Pause: nhấn Play để bật trọng lực và tiếp xúc. Spawn hiện đặt `z=0.10` m (base_footprint) để bánh gần mặt đất ở `(0,-2)`; có thể đổi bằng `ACKERMANN_SPAWN_Z=0.15 bash spawn_robot_on_terrain.sh` trước khi spawn. Robot đã spawn trước đó sẽ không tự đổi cao độ: nếu muốn thả lại, phải xóa entity cũ hoặc khởi động lại world và spawn mới.
+
+## Khoanh vùng nghẽn gzserver bằng 6 cấp robot
+
+Nếu world chạy với RTF≈1 nhưng spawn robot làm RTF≈0, dùng [`README_STAGES_VI.md`](README_STAGES_VI.md) và `spawn_robot_stage.sh`. Hai file mới tách robot thành 6 cấp: thân xe → bánh sau → bánh trước/khớp lái → Ackermann Drive → LiDAR → camera. Ví dụ thử cấp 0: `bash spawn_robot_stage.sh 0`. **Khởi động lại Gazebo sạch trước mỗi cấp**, không gọi launch Gazebo từ package robot gốc.

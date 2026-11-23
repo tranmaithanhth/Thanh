@@ -175,3 +175,33 @@ Terminal 1: `bash run_world_v103.sh`. Terminal 2: `bash spawn_force_v103.sh`. Te
 `force_state` giữ 6 phần tử đầu: `[F_N, delta_ref, delta_actual, omega_RL, omega_RR, v_mps]`; thêm 4 phần tử: `[omega_FL, omega_FR, tau_per_rear_wheel_Nm, tau_per_front_wheel_Nm]`. Tất cả có dấu, thuận tiện so sánh trục quay/bám đường. Dừng thủ công bằng X hoặc Q, **X gửi lực 0 chứ không tạo phanh giữ dốc**.
 
 Sau khi tiến/lùi thủ công được, tắt manual rồi thử `bash auto_drive_v103.sh --dry-run`; chỉ chạy auto thật sau khi xác nhận chiều quay và bám đường. Không chạy manual và auto cùng lúc. Nếu muốn so sánh với MATLAB 22 Nm, chỉnh cả `matlab_vehicle_params.json` và `mission.json` về `146.6666667 N`, đặt `enhanced_max_total_drive_torque_Nm: 22.0` và `drive_mode: rear`, rồi respawn và kiểm tra thử; đổi mode không cần build lại C++ nếu plugin đã build theo phiên bản mới.
+
+## 10. Sửa lỗi *F=300 N nhưng xe không leo qua x≈3,07 m* (23/11/2026)
+
+**Dấu hiệu thực tế:** xe nhận `F=+300 N`, `delta=0`, nhưng từ `x≈3.38` lùi về `x≈3.01` rồi dao động quanh `x≈3.07`. Vận tốc bánh chỉ khoảng 0,1–3 rad/s, nên đây không phải bằng chứng bánh quay trơn dữ dội.
+
+**Phát hiện lỗi cốt lõi của plugin:** trong `ackermann_force_drive.cpp` trước bản vá, `OnUpdate()` có `if (dt <= 0.0 || dt < 0.01) return;`, tức bỏ qua gần 9/10 bước vật lý trong world có `max_step_size=0.001 s`. Gazebo Classic `Joint::SetForce()` là tác động lên bước mô phỏng hiện tại; muốn mômen liên tục thì phải gọi ở mỗi `WorldUpdateBegin`. Vì thế **mômen yêu cầu 45 N.m không được đưa đều vào mô phỏng**, dù `force_state` in ra giá trị lệnh 300 N.
+
+**Đã sửa:** mọi vòng cập nhật vật lý đều tính mômen 4 bánh và góc lái; chỉ giới hạn xuất `odom`/`force_state` ở 50 Hz bằng biến `last_publish_`, sau các lệnh `SetForce`. Bản vá **không tăng giới hạn lực** và không làm thay đổi địa hình, khối lượng, ma sát hay kiến trúc A*.
+
+**Quan trọng: phải biên dịch plugin và khởi động lại Gazebo**, vì sửa C++ không thể áp dụng vào server Gazebo đang chạy:
+
+```bash
+cd ~/ackermann_humble_ws/Thanh
+git pull --ff-only origin main
+cd ackermann-force-trajectory-v1.0.3
+bash setup_v103.sh
+python3 -m unittest discover -s tests -v
+# Đóng Gazebo cũ, trong Terminal 1:
+bash run_world_v103.sh
+# Terminal 2, cùng thư mục:
+bash spawn_force_v103.sh
+# Terminal 3:
+bash manual_drive_v103.sh --force-step 20 --steer-step 0.05 --deadman 5
+```
+
+Thử ở đường bằng `F=40–60 N` trước để xác nhận tiến/lùi đúng chiều và không đột ngột vọt nhanh. Sau đó leo dốc, tăng có kiểm soát `80 → 120 → 160 N` nếu cần; nhấn `X` để trả lực về 0, nhưng **X không phải phanh đỗ trên dốc**. Chỉ cân nhắc trên 160 N sau khi quan sát bánh và vận tốc thân. Khi đã sửa thời gian áp lực, cùng một mức lệnh giờ có thể tạo tác động **mạnh hơn nhiều** so với bản lỗi.
+
+Kiểm tra `/ackermann_vehicle/force_state`: 10 phần tử đầu là `[F_cmd, steer_ref, steer_actual, omega_RL, omega_RR, body_v, omega_FL, omega_FR, tau_each_rear, tau_each_front]`. Để đánh giá leo dốc cần quan sát **tọa độ X tăng thực tế theo thời gian**, không suy ra thành công từ `body_v` tức thời. Nếu vẫn kẹt dù bánh không quay trượt, kiểm tra va chạm gầm và khoảng sáng bánh bằng `View → Collisions` trong Gazebo. Đừng nâng 300 N thành 500 N khi chưa xác định nguồn cản.
+
+**Kiểm thử có giới hạn:** kiểm thử Python chỉ kiểm tra cấu trúc và mô hình dự báo; **chưa xác nhận** trong Gazebo thật với lốp–đường. Nếu `bash setup_v103.sh` báo lỗi biên dịch, lấy cả phần `error:` của C++ và CMake để sửa tiếp.

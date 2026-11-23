@@ -35,6 +35,26 @@ class TestTerrainAndAutonomy(unittest.TestCase):
             for a,b in zip(route,route[1:]):
                 self.assertTrue(self.m.segment_safe(a,b),f'blocked segment {a}->{b}')
 
+    def test_boosted_force_config_consistent(self):
+        params=json.loads((BASE/'matlab_vehicle_params.json').read_text())
+        self.assertAlmostEqual(params['matlab_reference_rear_axle_torque_Nm'], 22.)
+        self.assertAlmostEqual(params['enhanced_max_total_drive_torque_Nm'],45.)
+        self.assertEqual(params['drive_mode'],'all')
+        self.assertAlmostEqual(params['max_drive_force_N'] * params['radius_m'],
+                               params['enhanced_max_total_drive_torque_Nm'])
+        self.assertAlmostEqual(self.cfg['max_drive_force_N'],params['max_drive_force_N'])
+        self.assertLessEqual(self.cfg['hill_start_force_N'],self.cfg['max_drive_force_N'])
+
+    def test_hill_start_boost_only_on_uphill(self):
+        self.m.astar((-0.4,-2))
+        from planner_core import Mission
+        # At x=4.5 the smooth ramp has a positive grade near its maximum.
+        p=Pose(4.5,-2.5,0.0,0.0)
+        # This test checks the hill-start force floor, not Gazebo traction.
+        f,d,dist,dev,vref=self.m.local_force_steer(p)
+        self.assertGreaterEqual(f, self.cfg['hill_start_force_N'] - 30.0)
+        self.assertLessEqual(abs(f),self.m.max_F+1e-7)
+
     def test_bounded_commands(self):
         self.m.astar((-0.4,-2))
         for state in [Pose(-.4,-2,0,0),Pose(4.,-1.,.2,.4),Pose(16,.6,0,.2)]:
@@ -87,7 +107,9 @@ class TestUrdfPhysicalAlignment(unittest.TestCase):
                 if 'wheel' in (gz.get('reference') or ''):
                     self.assertEqual(gz.find('mu1').text,'1.1')
                     self.assertEqual(gz.find('mu2').text,'1.1')
-            self.assertEqual(out.find('.//plugin[@name="ackermann_force_drive"]/max_force').text,str(params['max_drive_force_N']))
+            plugin=out.find('.//plugin[@name="ackermann_force_drive"]')
+            self.assertEqual(plugin.find('max_force').text,str(params['max_drive_force_N']))
+            self.assertEqual(plugin.find('drive_mode').text,'all')
 
 
 if __name__ == '__main__':unittest.main()

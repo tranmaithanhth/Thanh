@@ -30,6 +30,16 @@ ros2 service list | grep -qx /spawn_entity || {
   echo "ERROR: ROS spawn service is absent. Launch the terrain using bash run_world_clean.sh (GUI, not --server)." >&2
   exit 1
 }
+if [[ "$STAGE" == 3 ]]; then
+  # A stale controller can publish positive speed as soon as a new robot appears.
+  # No controller should publish until AFTER this robot has been spawned.
+  PUB_COUNT="$(ros2 topic info /ackermann_vehicle/cmd_vel 2>/dev/null | awk '''/Publisher count:/ {print $3}''' || true)"
+  if [[ "$PUB_COUNT" =~ ^[0-9]+$ ]] && (( PUB_COUNT > 0 )); then
+    echo "[ERROR] Existing cmd_vel publisher(s): $PUB_COUNT. Stop old controllers before spawning stage 3." >&2
+    echo "Inspect: ros2 topic info /ackermann_vehicle/cmd_vel -v" >&2
+    exit 1
+  fi
+fi
 PKG_PREFIX="$(ros2 pkg prefix ackermann_vehicle)" || {
  echo "ERROR: ackermann_vehicle not found in workspace" >&2; exit 1;
 }

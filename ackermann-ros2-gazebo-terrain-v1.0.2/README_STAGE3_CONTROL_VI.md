@@ -109,3 +109,5 @@ Log tại (x=2.415,y=-1.357) cho thấy `cmd=(-0.25,+0.25)`: xe đang được y
 - Nếu lùi vẫn không được ở x=-4 nhưng tiến được, lỗi liên quan đến cơ cấu truyền động khi đảo chiều, điều khiển PID hoặc chiều quay khớp bánh. Kiểm tra thêm `ros2 topic info /ackermann_vehicle/cmd_vel -v` để loại trừ nhiều publisher.
 
 Lưu ý: vùng terrain tồn tại x,y từ -20 đến 20 m. Kịch bản thử này chỉ thay đổi điểm spawn, **không thay đổi world, cảm biến hoặc plugin Ackermann**. Kết luận về lỗi truyền động cần dựa trên kết quả thử thực tế.
+
+**Chú ý về ý nghĩa lệnh rẽ:** Trong phiên bản `gazebo_ros_ackermann_drive` này, giá trị `Twist.angular.z` được xử lý trực tiếp như **góc lái yêu cầu (rad)** để tính hai góc lái Ackermann, không phải tốc độ yaw (rad/s) theo cách hiểu thông thường của `geometry_msgs/Twist`. Vì vậy `cmd=(-0.25,+0.25)` nghĩa là lùi và yêu cầu góc lái xấp xỉ 0.25 rad; còn trường `wz` đo từ odometry mới là tốc độ quay thân xe (rad/s).

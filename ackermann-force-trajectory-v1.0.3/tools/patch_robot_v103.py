@@ -7,6 +7,14 @@ import xml.etree.ElementTree as ET
 
 
 def patch(source: Path, destination: Path, params: dict):
+    max_force = float(params['max_drive_force_N'])
+    radius = float(params['radius_m'])
+    enhanced_torque = float(params['enhanced_max_total_drive_torque_Nm'])
+    mode = params.get('drive_mode', 'rear')
+    if max_force <= 0 or radius <= 0 or abs(max_force * radius - enhanced_torque) > 1e-4:
+        raise ValueError('max_drive_force_N * radius_m must equal enhanced_max_total_drive_torque_Nm')
+    if mode not in ('rear','all'):
+        raise ValueError('drive_mode must be rear or all')
     tree = ET.parse(source)
     root = tree.getroot()
     links = {l.get('name'): l for l in root.findall('link')}
@@ -62,6 +70,7 @@ def patch(source: Path, destination: Path, params: dict):
         'wheelbase': params['wheelbase_m'],
         'track_width': params['track_m'],
         'max_force': params['max_drive_force_N'],
+        'drive_mode': mode,
         'max_steer': params['max_steer_rad'],
         'max_steer_rate': params['max_steer_rate_rad_s'],
         'steering_kp': 25.0, 'steering_kd': 3.0,
@@ -88,7 +97,8 @@ def main():
     ap.add_argument('--params',type=Path,required=True)
     args=ap.parse_args()
     mass=patch(args.input,args.output,json.loads(args.params.read_text(encoding='utf-8')))
-    print(f'[MODEL] MATLAB mass-aligned: {mass:.3f}kg, wheel J_spin=0.03kg.m2, force/steering ROS plugin, mu=1.1 assumed')
+    params = json.loads(args.params.read_text(encoding='utf-8'))
+    print(f'[MODEL] mass={mass:.3f}kg, force_cap={params["max_drive_force_N"]:.1f}N, drive_mode={params["drive_mode"]}; MATLAB 22Nm baseline retained, mu={params["gazebo_tire_coulomb_mu_assumed"]} assumed')
 
 if __name__=='__main__':
     main()

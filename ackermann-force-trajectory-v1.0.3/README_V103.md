@@ -1,6 +1,6 @@
 # Ackermann Terrain3D ROS 2 Humble / Gazebo Classic v1.0.3
 
-**Đối chiếu MATLAB v1.0.4 + lực phát động và góc lái + A* tự tìm đường + bám quỹ đạo, KHÔNG LiDAR/camera.**
+**Đối chiếu MATLAB v1.0.4 + mô hình dẫn động cải tiến AWD 45 N·m / 300 N + A* tự hành bằng lực phát động và góc lái, KHÔNG LiDAR/camera.**
 
 ## 0. Phạm vi và khác biệt
 
@@ -13,12 +13,12 @@ Giữ nguyên terrain/world v1.0.2 (heightmap 40×40m, obstacle, cao độ MATLA
 | Bán kính bánh | 0,15m | 0,15m | 0,15m |
 | Quán tính quay bánh | 0,03 kgm² | ~0,01125 kgm² quanh trục | **0,03 kgm²** trên trục quay quán tính bánh |
 | Jroll / Jpitch / Jyaw | 0,85 / 1,45 / 1,50 kgm² | từ hộp 8 kg và bánh | 0,85 / 1,45 / 1,50 nhập ở `chassis` (tổng hệ gồm vị trí bánh sẽ khác) |
-| Mômen phát động tổng | ±22 Nm | PID tốc độ không giới hạn mômen tương đương | **±22 Nm**, chia đều 11 Nm mỗi bánh sau |
+| Mômen phát động tổng | ±22 Nm, hai bánh sau | PID vận tốc chưa khớp mômen | **±45 Nm**, chia 4 bánh ở chế độ cải tiến AWD (11,25 Nm/bánh ở giới hạn) |
 | Góc lái / tốc độ lái | ±0,52rad / ±0,95rad/s | ±0,60 rad plugin | **±0,52rad / ±0,95rad/s** |
 | Ma sát bánh | **Không có μ Coulomb tương đương**; MATLAB giả thiết lăn không trượt | μ bánh 1000; μ mặt 1,1 | **μ bánh 1,1** và mặt đường 1,1, là giả định cần nhận dạng thực nghiệm |
 | Độ cứng, cản đứng | 1600 N/m, 72 N·s/m mỗi bánh (tính Fz) | Gazebo ODE collision kp 100000, kd10 | **Chưa tương đương**; cần mô hình lốp/giảm chấn riêng để khớp lực Fz |
 
-Trong MATLAB `terrain3d_reduced_rhs`, lực tổng cầu sau được suy từ `tau / Rw`, với giới hạn `tau_max=22 N·m`; phương trình động lực học gồm quán tính, cản lăn, lực dốc và khớp lái. Gazebo là rigid-body contact solver và có trượt, **không thể đảm bảo cùng quỹ đạo chỉ do trùng tham số**. Bộ lập kế hoạch dùng `m=20`, `L=0.8`, `Rw=0.15`, mômen 22Nm (lực tương đương ±146,67N), độ dốc max0,50, các vật cản giống MATLAB. Trọng tâm ROS được giữ tại center của chassis; pose định vị P của MATLAB là giữa cầu sau, lệch `0.4m` so với pose model. Controller tự bù độ lệch này.
+Trong MATLAB `terrain3d_reduced_rhs`, lực tổng cầu sau được suy từ `tau / Rw`, với giới hạn gốc `tau_max=22 N·m` (±146,67 N). **Chế độ Gazebo cải tiến này KHÔNG giữ giới hạn mômen MATLAB:** giới hạn tổng 45 N·m (tương đương ±300 N), phân bố lên bốn bánh chủ động (AWD) nhằm tăng độ bám khi leo dốc. Các thông số khối lượng, hình học, quán tính bánh và bản đồ vẫn tham chiếu MATLAB v1.0.4. Gazebo dùng vật rắn có trượt, nên chưa thể kỳ vọng quỹ đạo và lực tiếp xúc trùng MATLAB. Bộ lập kế hoạch dùng `m=20`, `L=0.8`, `Rw=0.15`, lực trần ±300 N và lực hỗ trợ khởi hành dốc 175 N, độ dốc max0,50. Trọng tâm ROS được giữ tại center của chassis; pose định vị P của MATLAB là giữa cầu sau, lệch `0.4m` so với pose model. Controller tự bù độ lệch này.
 
 ## 1. Cài đặt một lần
 
@@ -70,7 +70,7 @@ Tự lấy vị trí và hướng từ `/ackermann_vehicle/odom`, đổi từ t�
 
 ## 3. Giao tiếp force/steer
 
-`/ackermann_vehicle/force_steer` loại `std_msgs/msg/Float64MultiArray` với **2 phần tử theo thứ tự** `[F_drive_N, steer_rad]`. Đây là lệnh lực N, **KHÔNG phải tốc độ**, và có thể âm để phanh/lùi. Động cơ nhận `tau_rear_l = tau_rear_r = F * Rw / 2`. `|F| <= 146.67N`, `|delta|<=0.52rad`, tốc độ quay lái tham chiếu <=0.95rad/s. Nếu không nhận lệnh 0,6s, plugin đưa lực và góc đặt về 0 (trên dốc có thể trôi vì không tạo phanh giữ).
+`/ackermann_vehicle/force_steer` loại `std_msgs/msg/Float64MultiArray` với **2 phần tử theo thứ tự** `[F_drive_N, steer_rad]`. Đây là lệnh lực N, **KHÔNG phải tốc độ**, và có thể âm để phanh/lùi. Động cơ nhận `tau_rear_l = tau_rear_r = F * Rw / 2`. `|F| <= 300N`, `|delta|<=0.52rad`, tốc độ quay lái tham chiếu <=0.95rad/s. Nếu không nhận lệnh 0,6s, plugin đưa lực và góc đặt về 0 (trên dốc có thể trôi vì không tạo phanh giữ).
 
 `/ackermann_vehicle/odom` loại `nav_msgs/Odometry`, vị trí world, quaternion pose; `/ackermann_vehicle/force_state` là mảng 6 số `[F_N, delta_ref_rad, delta_actual_avg_rad, omega_RL_rad_s, omega_RR_rad_s, v_m_s]`; `/ackermann_vehicle/planned_path` loại `nav_msgs/Path` (frame `world`). Có thể kiểm tra:
 ```bash
@@ -127,7 +127,7 @@ Mở riêng Terminal điều khiển sau khi world và robot v1.0.3 đã spawn; 
 bash manual_drive_v103.sh --force-step 10 --steer-step 0.05 --deadman 5
 ```
 
-W cộng **+10 N** mỗi lần, S giảm **−10 N** mỗi lần (qua 0 rồi mới lùi), A/D tăng giảm góc lái **0,05 rad** mỗi lần, C đưa góc lái về 0, X dừng phát động, Q thoát. Mọi lệnh bị chặn ở ±146,67 N và ±0,52 rad; hết 5 giây không nhấn sẽ trả về 0. Chương trình hiển thị liên tục vị trí, vận tốc thực và lực/góc ra lệnh. Dùng để xác định riêng khả năng xe lùi, trước khi khởi động A* tự hành.
+W cộng **+20 N** mỗi lần (mặc định mới), S giảm **−20 N** mỗi lần (qua 0 rồi mới lùi), A/D tăng giảm góc lái **0,05 rad** mỗi lần, C đưa góc lái về 0, X dừng phát động, Q thoát. Mọi lệnh bị chặn ở ±300 N và ±0,52 rad; hết 5 giây không nhấn sẽ trả về 0. Chương trình hiển thị liên tục vị trí, vận tốc thực và lực/góc ra lệnh. Dùng để xác định riêng khả năng xe lùi, trước khi khởi động A* tự hành.
 ## 7. Xác nhận phiên bản MATLAB dùng làm chuẩn và phép thử khối lượng–ma sát
 
 **Nguồn so sánh chính:** tài liệu `Huong_dan_chi_tiet_code_Ackermann_Terrain3D_MATLAB_v1.0.4.docx`, phần `ackermann_cfg` / `terrain3d_reduced_rhs`. MATLAB Terrain3D **v1.0.4** dùng `c.m=20 kg`, `c.maxTorque=22 N.m`, `Jw=0.03 kg.m²/bánh`, `c.cv=0.8 N.s/m/bánh`, `tireK=1600 N/m` và `tireC=72 N.s/m`. Đừng nhầm với code `ackermann-simulink-v1.0.2/ackermann_cfg.m` cũ ở cùng repo, trong đó `c.maxTorque=7.5 N.m`. V1.0.3 chủ đích theo **Terrain3D v1.0.4**, không phải v1.0.2.
@@ -148,3 +148,30 @@ Lệnh kiểm thử Python đối chiếu tổng khối lượng URDF giả lậ
 Nếu chạy `bash spawn_force_v103.sh` báo `/opt/ros/humble/setup.bash: line 8: AMENT_TRACE_SETUP_FILES: unbound variable`, nguyên nhân là shell con của script bật `set -u` trước khi `source` ROS 2. Đã sửa trong `spawn_force_v103.sh`, `manual_drive_v103.sh`, `auto_drive_v103.sh`: chỉ bật `set -u` sau khi nạp `/opt/ros/humble/setup.bash` và `$ACKERMANN_WS/install/setup.bash`.
 
 Cập nhật `cd ~/ackermann_humble_ws/Thanh && git pull --ff-only origin main`, rồi `cd ackermann-force-trajectory-v1.0.3 && bash spawn_force_v103.sh` (cần Gazebo đang chạy bằng `run_world_v103.sh`). Nếu đã cài và build plugin thành công, **không phải build lại C++** cho sửa lỗi shell này. Kiểm tra cú pháp: `for f in spawn_force_v103.sh manual_drive_v103.sh auto_drive_v103.sh; do bash -n "$f" || break; done`.
+
+## 9. Cải tiến leo dốc: AWD, mômen tổng 45 N·m và giới hạn lực 300 N (23/11/2026)
+
+**Lý do:** Độ dốc cực đại của hàm cao độ xấp xỉ 0,5 (≈26,6°). Với xe 20 kg, thành phần trọng lực dọc dốc khoảng `m g sin(atan 0.5) ≈ 87,7 N`. Trước đây tổng mômen cầu sau 22 N·m ⇔ 146,67 N quy đổi; tuy nhiên giới hạn **lực bám** của riêng hai bánh chủ động có thể chỉ khoảng `mu*(m*g*cos(atan(0.5))/2) ≈ 96,5 N` nếu phân bố tải gần 50/50. Khi bánh quay trượt, tăng lực động cơ mà không tăng diện tích/tải bánh chủ động sẽ không khắc phục được.
+
+**Cấu hình nâng cấp, cố ý khác MATLAB:**
+
+- MATLAB v1.0.4 vẫn giữ tham chiếu `22 N·m` (không sửa dữ liệu MATLAB).
+- Gazebo v1.0.3 chuyển qua **AWD cả 4 bánh**: tổng mômen động cơ tối đa `45 N·m`, lực quy đổi `300 N`, phân bố đều từng bánh; tại giới hạn `11,25 N·m/bánh`. Lực `300 N` là giới hạn mômen **quy đổi**, không phải lực tiếp tuyến chắc chắn có thể truyền xuống đường.
+- Sử dụng ma sát Coulomb giả định `mu=1,1`: lực bám lý tưởng của **cả bốn bánh** trên dốc khoảng `mu*m*g*cos(atan(0.5)) ≈ 193 N`, còn thay đổi theo phân bố tải thực tế. Vì vậy không nên luôn yêu cầu 300 N; trượt bánh có thể tăng nếu đạp lực quá lớn.
+- Bộ lập kế hoạch tự hành có **hỗ trợ khởi hành trên dốc** (mặc định lực yêu cầu không thấp hơn `175 N` khi dốc dọc >=0,16 và tốc độ tiến thực <0,15 m/s), nhưng các giới hạn an toàn quỹ đạo vẫn giữ nguyên. Hỗ trợ này chỉ mang tính thử nghiệm, không bảo đảm xe leo dốc thành công nếu sai trục bánh, thiếu ma sát hoặc Gazebo contact solver bị kẹt.
+
+**Phải biên dịch lại plugin C++** sau khi pull bản sửa, và phải đóng Gazebo cũ rồi tạo world mới để tải plugin và URDF mới:
+
+```bash
+cd ~/ackermann_humble_ws/Thanh
+git pull --ff-only origin main
+cd ackermann-force-trajectory-v1.0.3
+bash setup_v103.sh
+python3 -m unittest discover -s tests -v
+```
+
+Terminal 1: `bash run_world_v103.sh`. Terminal 2: `bash spawn_force_v103.sh`. Terminal 3: thử điều khiển `bash manual_drive_v103.sh --force-step 20 --steer-step 0.05 --deadman 5`. Tăng lực **từng bước**, lần lượt 40, 80, 120, 160–180 N, quan sát `/ackermann_vehicle/force_state`. Nếu bánh quay nhanh nhưng vận tốc thân gần 0, **bánh trượt hoặc bị kẹt về cơ khí**; không tiếp tục tăng lực.
+
+`force_state` giữ 6 phần tử đầu: `[F_N, delta_ref, delta_actual, omega_RL, omega_RR, v_mps]`; thêm 4 phần tử: `[omega_FL, omega_FR, tau_per_rear_wheel_Nm, tau_per_front_wheel_Nm]`. Tất cả có dấu, thuận tiện so sánh trục quay/bám đường. Dừng thủ công bằng X hoặc Q, **X gửi lực 0 chứ không tạo phanh giữ dốc**.
+
+Sau khi tiến/lùi thủ công được, tắt manual rồi thử `bash auto_drive_v103.sh --dry-run`; chỉ chạy auto thật sau khi xác nhận chiều quay và bám đường. Không chạy manual và auto cùng lúc. Nếu muốn so sánh với MATLAB 22 Nm, chỉnh cả `matlab_vehicle_params.json` và `mission.json` về `146.6666667 N`, đặt `enhanced_max_total_drive_torque_Nm: 22.0` và `drive_mode: rear`, rồi respawn và kiểm tra thử; đổi mode không cần build lại C++ nếu plugin đã build theo phiên bản mới.

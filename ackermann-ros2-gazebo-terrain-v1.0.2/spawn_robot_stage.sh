@@ -1,52 +1,50 @@
 #!/usr/bin/env bash
-# Gazebo Classic 11 + ROS 2 Humble Ackermann progressive debugging.
-# Keeps world running; only spawns one URDF test variant per run.
-# Usage: bash spawn_robot_stage.sh A|B|C|D|E|F
-#       ACKERMANN_SPAWN_Z=0.12 bash spawn_robot_stage.sh B
+# Launch a partial Ackermann model in the already running Gazebo terrain.
+# Usage: bash spawn_robot_stage.sh 0..5
+# Optional: ACKERMANN_SAFE_FRICTION=1 bash spawn_robot_stage.sh 2
 set -eo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-WS="${ACKERMANN_WS:-$HOME/ackermann_humble_ws}"
 STAGE="${1:-}"
-SPAWN_Z="${ACKERMANN_SPAWN_Z:-0.10}"
-if [[ ! "$STAGE" =~ ^[ABCDEF]$ ]]; then
-  echo 'Usage: bash spawn_robot_stage.sh A|B|C|D|E|F' >&2
+if [[ ! "$STAGE" =~ ^[0-5]$ ]]; then
+  echo 'Usage: bash spawn_robot_stage.sh <0|1|2|3|4|5>' >&2
   exit 2
 fi
-if [[ ! -f "$WS/install/setup.bash" ]]; then
-  echo "Missing $WS/install/setup.bash (build workspace first)" >&2
-  exit 1
-fi
-exec env -i HOME="$HOME" USER="${USER:-$(id -un)}" LOGNAME="${LOGNAME:-$(id -un)}" \
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WS="${ACKERMANN_WS:-$HOME/ackermann_humble_ws}"
+SPAWN_Z="${ACKERMANN_SPAWN_Z:-0.10}"
+SAFE="${ACKERMANN_SAFE_FRICTION:-0}"
+[[ -f "$WS/install/setup.bash" ]] || { echo "Missing ROS workspace: $WS/install/setup.bash" >&2; exit 1; }
+exec env -i \
+ HOME="$HOME" USER="${USER:-$(id -un)}" LOGNAME="${LOGNAME:-$(id -un)}" \
  PATH="/usr/local/bin:/usr/bin:/bin" LANG="${LANG:-C.UTF-8}" \
- ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}" \
- ACKERMANN_WS="$WS" DIAG_ROOT="$ROOT" DIAG_STAGE="$STAGE" \
- ACKERMANN_SPAWN_Z="$SPAWN_Z" \
+ ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}" ACKERMANN_WS="$WS" \
+ STAGE="$STAGE" ROOT="$ROOT" SPAWN_Z="$SPAWN_Z" SAFE="$SAFE" \
  bash --noprofile --norc -c '
 set -eo pipefail
 source /opt/ros/humble/setup.bash
 source "$ACKERMANN_WS/install/setup.bash"
-command -v xacro >/dev/null || { echo "Missing xacro" >&2; exit 1; }
-ros2 pkg prefix gazebo_ros >/dev/null || { echo "Missing gazebo_ros" >&2;exit 1; }
-if ! timeout 8s ros2 service list | grep -qx /spawn_entity; then
-  echo "Missing /spawn_entity. Start GUI world using run_world_clean.sh (without --server)." >&2
+echo "[ROS] ROS_DISTRO=${ROS_DISTRO:-?}"
+ros2 service list | grep -qx /spawn_entity || {
+  echo "ERROR: ROS spawn service is absent. Launch the terrain using bash run_world_clean.sh (GUI, not --server)." >&2
   exit 1
-fi
-# A stale model from a prior test would invalidate the comparisons.
-if timeout 4s gz model -l 2>/dev/null | grep -q "terrain_stage_"; then
-  echo "Another terrain_stage model is present; restart world before each trial." >&2
-  exit 1
-fi
-pkg="$(ros2 pkg prefix ackermann_vehicle)" || { echo "Missing ackermann_vehicle in current workspace" >&2;exit 1; }
-xacro_file="$pkg/share/ackermann_vehicle/urdf/ackermann_vehicle.urdf.xacro"
-[[ -s "$xacro_file" ]] || { echo "Missing XACRO: $xacro_file" >&2;exit 1; }
-tmpdir="$(mktemp -d)"
-trap '\''rm -rf "$tmpdir"'\'' EXIT
-xacro "$xacro_file" -o "$tmpdir/full.urdf"
-python3 "$DIAG_ROOT/tools/generate_robot_stage.py" "$DIAG_STAGE" "$tmpdir/full.urdf" "$tmpdir/stage.urdf"
-echo "[TEST] stage=$DIAG_STAGE, entity=terrain_stage_$DIAG_STAGE, spawn z=$ACKERMANN_SPAWN_Z"
-echo "[NOTE] Gazebo must be in Play mode; let the model settle 10-15 seconds."
-timeout 50s ros2 run gazebo_ros spawn_entity.py -entity "terrain_stage_$DIAG_STAGE" \
-  -file "$tmpdir/stage.urdf" -x 0.0 -y -2.0 -z "$ACKERMANN_SPAWN_Z" -Y 0.0
-printf "\n[TEST] Monitor: gz stats\n"
-printf "[TEST] Do not drive before testing stage C.\n"
+}
+PKG_PREFIX="$(ros2 pkg prefix ackermann_vehicle)" || {
+ echo "ERROR: ackermann_vehicle not found in workspace" >&2; exit 1;
+}
+XACRO="$PKG_PREFIX/share/ackermann_vehicle/urdf/ackermann_vehicle.urdf.xacro"
+[[ -f "$XACRO" ]] || { echo "Missing XACRO: $XACRO" >&2; exit 1; }
+TMP="$(mktemp -d)"
+trap '\''rm -rf "$TMP"'\'' EXIT
+xacro "$XACRO" > "$TMP/robot_full.urdf"
+OPTS=()
+if [[ "$SAFE" == 1 ]]; then OPTS+=(--safe-friction); fi
+python3 "$ROOT/tools/build_robot_stage.py" \
+ --source "$TMP/robot_full.urdf" --output "$TMP/robot_stage.urdf" \
+ --stage "$STAGE" "${OPTS[@]}"
+ENTITY="terrain_probe_s$STAGE"
+echo "[SPAWN] $ENTITY at x=0 y=-2 z=$SPAWN_Z"
+echo "[NOTE] Restart Gazebo between stages, otherwise prior robot(s) remain in world."
+ros2 run gazebo_ros spawn_entity.py \
+ -entity "$ENTITY" -file "$TMP/robot_stage.urdf" \
+ -x 0.0 -y -2.0 -z "$SPAWN_Z" -Y 0.0
+printf "\nStage %s spawned. Gazebo must be in PLAY state. Check: timeout 10s gz stats\n" "$STAGE"
 '

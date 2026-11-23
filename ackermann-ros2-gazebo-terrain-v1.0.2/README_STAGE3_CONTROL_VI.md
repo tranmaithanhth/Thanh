@@ -29,8 +29,8 @@ Chương trình sẽ in mỗi 0,5 s: `XYZ` (m), `ROLL`, `PITCH`, `YAW` (độ), 
 
 | Phím | Lệnh |
 |---|---|
-| `w` | Tiến 0,25 m/s |
-| `s` | Lùi 0,10 m/s |
+| `w` | Tiến 0,25 m/s, đồng thời hủy lệnh rẽ cũ |
+| `s` | Lùi 0,10 m/s (hoặc `--reverse-speed`), đồng thời hủy lệnh rẽ cũ |
 | `a` | Quay trái (yaw rate +0,25 rad/s) |
 | `d` | Quay phải (yaw rate −0,25 rad/s) |
 | `c` | Trả lệnh góc quay về 0 |
@@ -94,3 +94,18 @@ Bản cập nhật `tools/stage3_console.py` in `[WARN] STALL` khi có lệnh ti
 5. Để đối chiếu tốc độ mô phỏng: `timeout 8s gz stats`. Nếu chỉ có cấu hình ma sát gốc bị dừng, nguyên nhân cần kiểm tra nằm trong tiếp xúc bánh–đường; nếu cả hai cùng bị dừng, cần xem tiếp lực kéo PID/khớp và vị trí từng bánh.
 
 Lưu ý: không sử dụng `--deadman 60` cho các thử nghiệm gần chướng ngại; dùng 15 s và bấm X/Space để dừng sớm. Khi không cần lái, chạy `bash stage3_control_feedback.sh --monitor-only` (không phát lệnh, vẫn phản hồi tư thế).
+
+## Phát hiện xe như chạm ranh giới khi lùi ở x≈2.4 m
+
+Log tại (x=2.415,y=-1.357) cho thấy `cmd=(-0.25,+0.25)`: xe đang được yêu cầu lùi **đồng thời rẽ**, không phải lùi thẳng. Bản sửa console mới đặt `angular.z=0` khi nhấn `W` hoặc `S`; bạn vẫn có thể nhấn A/D sau đó để rẽ. Để thử ngay trên bản chưa cập nhật, nhấn X rồi S, hoặc nhấn C để xóa lệnh rẽ.
+
+**Thử nghiệm tách địa hình và truyền động (không LiDAR):**
+
+- Đóng console và Gazebo cũ, cập nhật GitHub.
+- Mở Gazebo sạch bằng `bash run_world_clean.sh`.
+- Spawn robot cấp 3 trên đoạn đất phẳng **x = -4 m**, y=-2 bằng `ACKERMANN_SPAWN_X=-4 ACKERMANN_SPAWN_Y=-2 bash spawn_robot_stage.sh 3`.
+- Điều khiển bằng `bash stage3_control_feedback.sh --deadman 10 --reverse-speed 0.25`; nhấn S (không rẽ) và theo dõi x có giảm từ -4 xuống -5 không. Chỉ có một node gửi lệnh `cmd_vel`.
+- Nếu lùi được trên vùng x=-4 nhưng không lùi được ở x≈2.4, cần kiểm tra tiếp tiếp xúc bánh với chân dốc x≈2.5 và lực kéo; **không có tường hay giới hạn vị trí** tại đó trong world SDF.
+- Nếu lùi vẫn không được ở x=-4 nhưng tiến được, lỗi liên quan đến cơ cấu truyền động khi đảo chiều, điều khiển PID hoặc chiều quay khớp bánh. Kiểm tra thêm `ros2 topic info /ackermann_vehicle/cmd_vel -v` để loại trừ nhiều publisher.
+
+Lưu ý: vùng terrain tồn tại x,y từ -20 đến 20 m. Kịch bản thử này chỉ thay đổi điểm spawn, **không thay đổi world, cảm biến hoặc plugin Ackermann**. Kết luận về lỗi truyền động cần dựa trên kết quả thử thực tế.

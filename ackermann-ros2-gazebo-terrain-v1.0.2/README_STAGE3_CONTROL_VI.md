@@ -29,10 +29,10 @@ Chương trình sẽ in mỗi 0,5 s: `XYZ` (m), `ROLL`, `PITCH`, `YAW` (độ), 
 
 | Phím | Lệnh |
 |---|---|
-| `w` | Tiến 0,25 m/s, đồng thời hủy lệnh rẽ cũ |
-| `s` | Lùi 0,10 m/s (hoặc `--reverse-speed`), đồng thời hủy lệnh rẽ cũ |
-| `a` | Quay trái (yaw rate +0,25 rad/s) |
-| `d` | Quay phải (yaw rate −0,25 rad/s) |
+| `w` | Mỗi lần nhấn **tăng vận tốc yêu cầu +0,10 m/s** (tối đa +0,60 m/s); đồng thời xóa lệnh rẽ cũ |
+| `s` | Mỗi lần nhấn **giảm vận tốc yêu cầu −0,10 m/s** (tối đa −0,60 m/s); đồng thời xóa lệnh rẽ cũ |
+| `a` | Rẽ trái: gửi góc lái yêu cầu +0,25 rad |
+| `d` | Rẽ phải: gửi góc lái yêu cầu −0,25 rad |
 | `c` | Trả lệnh góc quay về 0 |
 | `x` hoặc `Space` | Dừng |
 | `q` | Dừng và thoát |
@@ -97,14 +97,14 @@ Lưu ý: không sử dụng `--deadman 60` cho các thử nghiệm gần chướ
 
 ## Phát hiện xe như chạm ranh giới khi lùi ở x≈2.4 m
 
-Log tại (x=2.415,y=-1.357) cho thấy `cmd=(-0.25,+0.25)`: xe đang được yêu cầu lùi **đồng thời rẽ**, không phải lùi thẳng. Bản sửa console mới đặt `angular.z=0` khi nhấn `W` hoặc `S`; bạn vẫn có thể nhấn A/D sau đó để rẽ. Để thử ngay trên bản chưa cập nhật, nhấn X rồi S, hoặc nhấn C để xóa lệnh rẽ.
+Log tại (x=2.415,y=-1.357) cho thấy `cmd=(-0.25,+0.25)`: xe đang được yêu cầu lùi **đồng thời rẽ**, không phải lùi thẳng. Bản sửa console đặt `angular.z=0` khi nhấn `W` hoặc `S`; bạn vẫn có thể nhấn A/D sau đó để rẽ. Để thử ngay trên bản chưa cập nhật, nhấn X rồi S, hoặc nhấn C để xóa lệnh rẽ.
 
 **Thử nghiệm tách địa hình và truyền động (không LiDAR):**
 
 - Đóng console và Gazebo cũ, cập nhật GitHub.
 - Mở Gazebo sạch bằng `bash run_world_clean.sh`.
 - Spawn robot cấp 3 trên đoạn đất phẳng **x = -4 m**, y=-2 bằng `ACKERMANN_SPAWN_X=-4 ACKERMANN_SPAWN_Y=-2 bash spawn_robot_stage.sh 3`.
-- Điều khiển bằng `bash stage3_control_feedback.sh --deadman 10 --reverse-speed 0.25`; nhấn S (không rẽ) và theo dõi x có giảm từ -4 xuống -5 không. Chỉ có một node gửi lệnh `cmd_vel`.
+- Điều khiển bằng `bash stage3_control_feedback.sh --deadman 10 --speed-step 0.10 --max-speed 0.60`; nhấn S (không rẽ) và theo dõi x có giảm từ -4 xuống -5 không. Chỉ có một node gửi lệnh `cmd_vel`.
 - Nếu lùi được trên vùng x=-4 nhưng không lùi được ở x≈2.4, cần kiểm tra tiếp tiếp xúc bánh với chân dốc x≈2.5 và lực kéo; **không có tường hay giới hạn vị trí** tại đó trong world SDF.
 - Nếu lùi vẫn không được ở x=-4 nhưng tiến được, lỗi liên quan đến cơ cấu truyền động khi đảo chiều, điều khiển PID hoặc chiều quay khớp bánh. Kiểm tra thêm `ros2 topic info /ackermann_vehicle/cmd_vel -v` để loại trừ nhiều publisher.
 
@@ -121,7 +121,7 @@ Lưu ý: vùng terrain tồn tại x,y từ -20 đến 20 m. Kịch bản thử 
 1. Đóng console, script thử, lệnh `ros2 topic pub` cũ và Gazebo. Kiểm tra tiến trình: `ps -eo pid,args | grep -E 'stage3_console|drive_slope_demo|test_stage3_reverse|ros2 topic pub'`.
 2. Mở world bằng `bash run_world_clean.sh`; spawn một robot bằng `bash spawn_robot_stage.sh 3`.
 3. **Chưa mở console, chưa gửi lệnh:** `source /opt/ros/humble/setup.bash && ros2 topic info /ackermann_vehicle/cmd_vel -v`. Kỳ vọng 0 publisher và 1 subscriber Ackermann Drive. Chờ xe ổn định 5 giây. Nếu xe vẫn đi nhanh khi 0 publisher, kiểm tra trọng lực/độ dốc, bánh, joint và odometry chứ không quy cho lệnh cũ. Trên mặt phẳng nhỏ có thể có trôi nhẹ.
-4. Mở một console: `bash stage3_control_feedback.sh --deadman 10 --reverse-speed 0.25`. Kỳ vọng 1 publisher và 1 subscriber. Nhấn X, sau đó S. Log phải cho `cmd=(-0.25,+0.00)`; nếu vận tốc thực vẫn ≈0, dùng `bash test_stage3_reverse.sh` trong phiên world mới, **không** chạy cùng console.
+4. Mở một console: `bash stage3_control_feedback.sh --deadman 10 --speed-step 0.10 --max-speed 0.60`. Kỳ vọng 1 publisher và 1 subscriber. Nhấn X, sau đó S. Log phải cho `cmd=(-0.25,+0.00)`; nếu vận tốc thực vẫn ≈0, dùng `bash test_stage3_reverse.sh` trong phiên world mới, **không** chạy cùng console.
 5. Nếu **chỉ có một publisher** mà lùi vẫn không được trên đất phẳng, mới chuyển sang kiểm tra PID lực truyền động và chiều quay khớp bánh. Không tăng PID bừa bãi hoặc gọi `gz joint --force` lên stage 3 khi plugin cũng đang điều khiển bánh.
 
 Lưu ý: Một lệnh `ros2 topic pub --once` gửi zero không ngăn script khác tiếp tục phát lệnh tiến. Phải đóng publisher cạnh tranh.
@@ -162,3 +162,29 @@ So sánh:
 - `no_motors` đứng yên nhưng `gentle` vẫn tự tiến hoặc không lùi → kiểm tra phản hồi chiều quay từng bánh và động học khớp, chưa coi vấn đề đã sửa.
 
 Các profile trên chỉ có hiệu lực khi sinh URDF bằng `spawn_robot_stage.sh 3`. File `src/ackermann_vehicle` trong workspace và XACRO gốc **không bị sửa**. Không chạy cùng lúc `drive_robot_on_terrain.sh`, `test_stage3_reverse.sh` hoặc một `ros2 topic pub` khác.
+
+## 23/11/2026 — W/S tăng giảm tốc độ từng nấc và PID trung gian
+
+Theo yêu cầu, console đã chuyển từ điều khiển vận tốc cố định sang **tăng giảm theo mỗi lần bấm**: `W` cộng 0,10 m/s; `S` trừ 0,10 m/s. Mỗi lần nhấn A/D chỉ sửa góc lái; W/S **đặt lệnh góc lái lại 0** để tránh vô tình duy trì rẽ khi đảo chiều. Từ tiến sang lùi (hoặc ngược lại) phải đi qua vận tốc 0. Dùng X hoặc Space để dừng ngay; Q để thoát. Console vẫn liên tục in vị trí và tư thế thực tế, cùng vận tốc yêu cầu `cmd` (không nên nhầm hai giá trị).
+
+Các tham số tùy chỉnh: `--speed-step 0.10` (bước tăng giảm, m/s) và `--max-speed 0.60` (giới hạn mặc định cả tiến/lùi). Tham số cũ `--reverse-speed 0.25` chỉ được giữ như một **giới hạn tốc độ lùi tối đa**, không còn là lệnh lùi cố định bằng một lần nhấn.
+
+Ví dụ nhấn `W` ba lần: `cmd=(+0.10,0)` → `(+0.20,0)` → `(+0.30,0)`; nhấn `S` một lần: `(+0.20,0)`, nhấn tiếp về 0 và rồi lùi. Các trạng thái chính xác phụ thuộc bước vận tốc.
+
+### Khi profile gentle quá yếu
+
+`no_motors` là chế độ **không cấp mômen**, vì vậy việc khó/không di chuyển khi bấm W/S trong chế độ này là bình thường. Xe có thể trôi một đoạn nhỏ sau spawn do trọng lực, tiếp xúc bánh–đường và trạng thái ban đầu; điều đó chưa chứng minh lỗi PID. `gentle` (P=2) có lực kéo rất yếu, nhất là trên dốc hoặc có cản lớn. Để thử riêng hệ số PID trung gian (**chưa hiệu chỉnh thực nghiệm**), khởi động Gazebo sạch rồi spawn:
+
+```bash
+ACKERMANN_DRIVE_PROFILE=moderate bash spawn_robot_stage.sh 3
+```
+
+`moderate` dùng PID vận tốc bánh sau `15 0 0`, PID lái trái/phải `80 0 0`. Chỉ thay PID trong URDF tạm, không sửa XACRO gốc, không thêm LiDAR/camera. Cấu hình cũ `original`, `gentle`, `no_motors` vẫn dùng được. Cần **khởi động world sạch giữa các lần thử**; không thể đổi PID bằng cách chạy lại console trên robot đã spawn.
+
+Trong Terminal điều khiển (chỉ một publisher `/ackermann_vehicle/cmd_vel`):
+
+```bash
+bash stage3_control_feedback.sh --deadman 10 --speed-step 0.10 --max-speed 0.60
+```
+
+Theo dõi `cmd` và `v` thực tế. Nếu `cmd` tăng tới +0.30 mà `v` gần 0, không kết luận thiếu tốc độ yêu cầu: đó là lỗi **tạo lực/khớp/tiếp xúc** cần điều tra, không nên tăng giới hạn tốc độ thêm. Bấm X ngay nếu xe chạy bất thường. `moderate` có thể vẫn dao động hoặc bị kẹt; chưa kiểm chứng trong Gazebo thực tế.

@@ -56,6 +56,8 @@ class Stage3Console(Node):
         self.last_pose_pub_at = 0.0
         self.last_missing_at = 0.0
         self.stale_warning = False
+        self.stall_since = None
+        self.last_stall_report = 0.0
         self.exit_requested = False
         self.odom_sub = self.create_subscription(Odometry, ODOM, self.on_odom, 10)
         self.pose_pub = self.create_publisher(PoseStamped, POSE, 10)
@@ -152,6 +154,22 @@ class Stage3Console(Node):
         if not self.args.monitor_only:
             self.publish_cmd(self.commanded_speed if active else 0.0,
                              self.commanded_yaw_rate if active else 0.0)
+        # Diagnostic only: do not alter motion or contact physics.
+        # Warn if a continuous nonzero speed request fails to move the chassis.
+        if (fresh and active and self.odom is not None
+                and abs(self.commanded_speed) >= 0.08
+                and abs(self.odom.twist.twist.linear.x) < 0.025):
+            if self.stall_since is None:
+                self.stall_since = now
+            if now - self.stall_since >= 4.0 and now - self.last_stall_report >= 4.0:
+                p = self.odom.pose.pose.position
+                print(f'[WARN] STALL: commanded {self.commanded_speed:+.2f} m/s '
+                      f'but odom v={self.odom.twist.twist.linear.x:+.3f} m/s '
+                      f'for >=4 s at X={p.x:.3f}, Y={p.y:.3f}, Z={p.z:.3f}. '
+                      'Check wheel contact/friction and other cmd_vel publishers.', flush=True)
+                self.last_stall_report = now
+        else:
+            self.stall_since = None
         if now - self.last_report_at >= 0.5:
             self.last_report_at = now
             if self.odom is None:

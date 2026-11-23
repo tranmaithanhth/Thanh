@@ -51,3 +51,31 @@ Spawn robot gần (x=0,y=0) với độ cao ban đầu phụ thuộc bán kính 
 ## Giới hạn kiểm thử
 
 Đã kiểm tra Python, cấu trúc XML, tọa độ SDF, ảnh PNG, vị trí các vật cản và cao độ trên lưới. **Chưa chạy Gazebo Classic 11 trực tiếp ở môi trường tạo bản sửa**; cần chạy trong Ubuntu của bạn để xác nhận phần hiển thị và phần tiếp xúc trùng nhau. Nếu vẫn lệch sau khi chạy bản mới, chụp Gazebo và gửi `gz model -l` cùng phần log ROS/Gazebo.
+## Gazebo không mở / lỗi môi trường ROS
+
+**Mới bổ sung 23/11/2026:** Có thể chạy world trong môi trường sạch (không lẫn ROS Noetic, Python/Qt của workspace khác) mà không phải cài lại Ubuntu hoặc ROS:
+
+```bash
+cd ~/ackermann_humble_ws/Thanh
+git pull --ff-only origin main
+cd ackermann-ros2-gazebo-terrain-v1.0.2
+bash tools/diagnose_gazebo.sh
+bash run_world_clean.sh
+```
+
+Nếu vẫn không mở cửa sổ, hãy phân tách server/GUI:
+
+```bash
+# Chạy chỉ server địa hình (không GUI, không plugin ROS):
+bash run_world_clean.sh --server
+# Khi đã xác nhận server hoạt động, Ctrl+C rồi chạy GUI bằng Mesa:
+bash run_world_clean.sh --software
+```
+
+Để lưu thông báo lỗi:
+
+```bash
+bash run_world_clean.sh 2>&1 | tee ~/ackermann_gazebo_error.log
+```
+
+Không tự xóa thư mục `~/.gazebo` hoặc `~/.ros`. Nếu `gzserver/gzclient` cũ còn chạy, đóng chúng trước khi mở world mới. Việc các file XML/PNG hợp lệ không bảo đảm plugin, GUI hoặc GPU đang hoạt động; dùng log để xác định chính xác.

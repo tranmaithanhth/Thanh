@@ -111,3 +111,17 @@ Log tại (x=2.415,y=-1.357) cho thấy `cmd=(-0.25,+0.25)`: xe đang được y
 Lưu ý: vùng terrain tồn tại x,y từ -20 đến 20 m. Kịch bản thử này chỉ thay đổi điểm spawn, **không thay đổi world, cảm biến hoặc plugin Ackermann**. Kết luận về lỗi truyền động cần dựa trên kết quả thử thực tế.
 
 **Chú ý về ý nghĩa lệnh rẽ:** Trong phiên bản `gazebo_ros_ackermann_drive` này, giá trị `Twist.angular.z` được xử lý trực tiếp như **góc lái yêu cầu (rad)** để tính hai góc lái Ackermann, không phải tốc độ yaw (rad/s) theo cách hiểu thông thường của `geometry_msgs/Twist`. Vì vậy `cmd=(-0.25,+0.25)` nghĩa là lùi và yêu cầu góc lái xấp xỉ 0.25 rad; còn trường `wz` đo từ odometry mới là tốc độ quay thân xe (rad/s).
+
+## 23/11/2026: Xe tự tiến sau spawn và lùi không được
+
+**Kiểm tra publisher trước khi sửa động lực học.** Gazebo Ackermann plugin giữ `target_linear_` từ lệnh `cmd_vel`; không thấy bộ tự hủy lệnh theo thời gian trong phiên bản plugin ROS 2 đã kiểm tra. Nếu một script thử hoặc Terminal ROS2 cũ còn sống, robot có thể nhận lệnh ngoài ý muốn. Console đã được bổ sung cảnh báo `[ERROR] cmd_vel PUBLISHER CONFLICT` và thoát khi ROS graph có nhiều hơn một publisher.
+
+**Phép thử sạch:**
+
+1. Đóng console, script thử, lệnh `ros2 topic pub` cũ và Gazebo. Kiểm tra tiến trình: `ps -eo pid,args | grep -E 'stage3_console|drive_slope_demo|test_stage3_reverse|ros2 topic pub'`.
+2. Mở world bằng `bash run_world_clean.sh`; spawn một robot bằng `bash spawn_robot_stage.sh 3`.
+3. **Chưa mở console, chưa gửi lệnh:** `source /opt/ros/humble/setup.bash && ros2 topic info /ackermann_vehicle/cmd_vel -v`. Kỳ vọng 0 publisher và 1 subscriber Ackermann Drive. Chờ xe ổn định 5 giây. Nếu xe vẫn đi nhanh khi 0 publisher, kiểm tra trọng lực/độ dốc, bánh, joint và odometry chứ không quy cho lệnh cũ. Trên mặt phẳng nhỏ có thể có trôi nhẹ.
+4. Mở một console: `bash stage3_control_feedback.sh --deadman 10 --reverse-speed 0.25`. Kỳ vọng 1 publisher và 1 subscriber. Nhấn X, sau đó S. Log phải cho `cmd=(-0.25,+0.00)`; nếu vận tốc thực vẫn ≈0, dùng `bash test_stage3_reverse.sh` trong phiên world mới, **không** chạy cùng console.
+5. Nếu **chỉ có một publisher** mà lùi vẫn không được trên đất phẳng, mới chuyển sang kiểm tra PID lực truyền động và chiều quay khớp bánh. Không tăng PID bừa bãi hoặc gọi `gz joint --force` lên stage 3 khi plugin cũng đang điều khiển bánh.
+
+Lưu ý: Một lệnh `ros2 topic pub --once` gửi zero không ngăn script khác tiếp tục phát lệnh tiến. Phải đóng publisher cạnh tranh.

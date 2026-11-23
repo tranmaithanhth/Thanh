@@ -33,7 +33,7 @@ ros2 service list | grep -qx /spawn_entity || {
 if [[ "$STAGE" == 3 ]]; then
   # A stale controller can publish positive speed as soon as a new robot appears.
   # No controller should publish until AFTER this robot has been spawned.
-  PUB_COUNT="$(ros2 topic info /ackermann_vehicle/cmd_vel 2>/dev/null | awk '''/Publisher count:/ {print $3}''' || true)"
+  PUB_COUNT="$(ros2 topic info /ackermann_vehicle/cmd_vel 2>/dev/null | sed -n "s/^Publisher count: //p" || true)"
   if [[ "$PUB_COUNT" =~ ^[0-9]+$ ]] && (( PUB_COUNT > 0 )); then
     echo "[ERROR] Existing cmd_vel publisher(s): $PUB_COUNT. Stop old controllers before spawning stage 3." >&2
     echo "Inspect: ros2 topic info /ackermann_vehicle/cmd_vel -v" >&2

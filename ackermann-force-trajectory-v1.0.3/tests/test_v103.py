@@ -76,6 +76,20 @@ class TestTerrainAndAutonomy(unittest.TestCase):
         self.assertLess(i/10,120)
 
 
+class TestForcePluginScheduling(unittest.TestCase):
+    def test_force_set_on_every_physics_step(self):
+        # Regression: Gazebo world uses 1ms step. SetForce must not be
+        # throttled to the 10ms (or larger) telemetry update interval.
+        src=(BASE/'ackermann_force_control/src/ackermann_force_drive.cpp').read_text()
+        self.assertIn('if (dt <= 0.0) return;',src)
+        self.assertNotIn('dt < 0.01',src)
+        self.assertIn('last_publish_',src)
+        gate=src.index('if ((info.simTime - last_publish_).Double() < 0.02) return;')
+        for command in ('rear_l_->SetForce', 'rear_r_->SetForce',
+                        'front_l_->SetForce', 'front_r_->SetForce',
+                        'pd(steer_l_', 'pd(steer_r_'):
+            self.assertLess(src.index(command),gate,command+' must execute every tick')
+
 class TestUrdfPhysicalAlignment(unittest.TestCase):
     def test_aggregate_mass_and_force_plugin(self):
         params=json.loads((BASE/'matlab_vehicle_params.json').read_text())

@@ -27,13 +27,15 @@ Ubuntu 22.04, ROS 2 Humble + Gazebo Classic 11 đã chạy world v1.0.2, workspa
 ```bash
 sudo apt update
 sudo apt install -y ros-humble-gazebo-ros-pkgs ros-humble-gazebo-dev \
-  ros-humble-gazebo-plugins libgazebo11-dev python3-colcon-common-extensions
+  ros-humble-gazebo-plugins libgazebo-dev python3-colcon-common-extensions
 cd ~/ackermann_humble_ws/Thanh
 # chỉ cần sau khi có commit v1.0.3:
 git pull --ff-only origin main
 cd ackermann-force-trajectory-v1.0.3
 bash setup_v103.sh
 ```
+
+**Ubuntu 22.04 Jammy:** gói SDK đúng là `libgazebo-dev` (Gazebo Classic 11), **không phải** `libgazebo11-dev` (tên gói ở Ubuntu 20.04). Xác minh bằng `apt-cache policy libgazebo-dev` và `gazebo --version`. Không chạy `sudo apt upgrade` hàng trăm gói chỉ vì lỗi tên gói. Nếu `apt` chưa thấy `libgazebo-dev`, kiểm tra thành phần `universe` của Ubuntu (`apt-cache policy libgazebo-dev`) trước khi chỉnh nguồn APT. 
 
 `setup_v103.sh` tạo symlink `~/ackermann_humble_ws/src/ackermann_force_control` và build `.so` bằng colcon. Nếu apt báo tên gói không tồn tại, dùng `apt-cache search ros-humble-gazebo` để xác nhận theo repo APT trên máy bạn. Không cần `colcon build` lại khi chỉ sửa JSON mission; C++ plugin cần build lại nếu sửa C++.
 

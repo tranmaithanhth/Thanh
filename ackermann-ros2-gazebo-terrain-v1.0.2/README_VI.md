@@ -96,3 +96,7 @@ Robot bắt đầu ở `(x=0,y=-2,z=0.10,yaw=0)` và chạy chậm dọc +X đ�
 ## Khoanh vùng nghẽn gzserver bằng 6 cấp robot
 
 Nếu world chạy với RTF≈1 nhưng spawn robot làm RTF≈0, dùng [`README_STAGES_VI.md`](README_STAGES_VI.md) và `spawn_robot_stage.sh`. Hai file mới tách robot thành 6 cấp: thân xe → bánh sau → bánh trước/khớp lái → Ackermann Drive → LiDAR → camera. Ví dụ thử cấp 0: `bash spawn_robot_stage.sh 0`. **Khởi động lại Gazebo sạch trước mỗi cấp**, không gọi launch Gazebo từ package robot gốc.
+
+## Vận hành cấp 3, phản hồi tọa độ và góc (không LiDAR)
+
+LiDAR ở cấp 4 khiến Gazebo ngừng tiến triển trong thử nghiệm của người dùng; vì vậy tiếp tục sử dụng **cấp 3**. Sau khi chạy world bằng `bash run_world_clean.sh`, trong Terminal mới dùng `bash start_stage3_robot.sh` để spawn đúng cấp 3 (không có LiDAR/camera); ở Terminal thứ ba chạy `bash stage3_control_feedback.sh` để điều khiển bằng bàn phím, hiển thị x/y/z, roll/pitch/yaw và ghi CSV. Hướng dẫn chi tiết: [README_STAGE3_CONTROL_VI.md](README_STAGE3_CONTROL_VI.md).

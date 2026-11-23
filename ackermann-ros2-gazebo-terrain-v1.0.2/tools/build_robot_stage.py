@@ -112,7 +112,7 @@ def make_stage(source: Path, target: Path, stage: int, safe_friction: bool) -> d
 
     target.parent.mkdir(parents=True, exist_ok=True)
     ET.indent(tree, space="  ")
-    tree.write(target, encoding="utf-8", xml_declaration=True)
+    tree.write(target, encoding="utf-8", xml_declaration=False)
     return {"stage": stage, "links": len(actual_links), "joints": len(actual_joints), "plugins": plugin_names,
             "safe_friction": safe_friction}
 

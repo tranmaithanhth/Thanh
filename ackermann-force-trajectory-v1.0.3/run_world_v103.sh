@@ -8,6 +8,11 @@ LIB="$WS/install/ackermann_force_control/lib"
 [[ -f "$LIB/libackermann_force_drive.so" ]] || {
  echo 'ERROR: force plugin not built: run bash setup_v103.sh first' >&2; exit 1;
 }
+# Prevent accidentally testing the old plugin that skipped 90% of physics updates.
+if [[ "$ROOT/ackermann_force_control/src/ackermann_force_drive.cpp" -nt "$LIB/libackermann_force_drive.so" ]]; then
+ echo 'ERROR: Force plugin C++ source is newer than .so. Rebuild: bash setup_v103.sh' >&2
+ exit 1
+fi
 [[ -s "$BASE/models/ackermann_matlab_terrain_v102/terrain_height.png" ]] || { echo 'terrain v1.0.2 missing' >&2; exit 1; }
 exec env -i HOME="$HOME" USER="${USER:-$(id -un)}" LOGNAME="${LOGNAME:-$(id -un)}" \
  PATH=/usr/local/bin:/usr/bin:/bin LANG="${LANG:-C.UTF-8}" \

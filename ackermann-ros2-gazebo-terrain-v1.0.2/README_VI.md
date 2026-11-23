@@ -103,4 +103,8 @@ LiDAR ở cấp 4 khiến Gazebo ngừng tiến triển trong thử nghiệm c�
 
 ## Chẩn đoán lùi chậm tại x≈2.5 m (cấp 3, không LiDAR)
 
-Giảm ma sát bánh xuống 1.0 chưa khắc phục việc lùi yếu. Để phân biệt vấn đề xuất hiện tại chân dốc hay ở bộ truyền động ngược chiều, xem [`README_REVERSE_DIAG_VI.md`](README_REVERSE_DIAG_VI.md): khởi động world sạch → `bash spawn_robot_stage.sh 3` → `bash test_stage3_reverse.sh` (không chạy đồng thời console điều khiển). Script thử lần lượt -0.10, -0.25 và +0.25 m/s, in quãng đường thực, giám sát odometry và phát lệnh dừng khi kết thúc. Với console thủ công có thể đổi tốc độ lùi: `bash stage3_control_feedback.sh --deadman 15 --reverse-speed 0.25`.
+Giảm ma sát bánh xuống 1.0 chưa khắc phục việc lùi yếu. Để phân biệt vấn đề xuất hiện tại chân dốc hay ở bộ truyền động ngược chiều, xem [`README_REVERSE_DIAG_VI.md`](README_REVERSE_DIAG_VI.md): khởi động world sạch → `bash spawn_robot_stage.sh 3` → `bash test_stage3_reverse.sh` (không chạy đồng thời console điều khiển). Script thử lần lượt -0.10, -0.25 và +0.25 m/s, in quãng đường thực, giám sát odometry và phát lệnh dừng khi kết thúc. Với console thủ công có thể đổi tốc độ lùi: `bash stage3_control_feedback.sh --deadman 10 --speed-step 0.10 --max-speed 0.60`.
+
+### W/S: tăng giảm tốc từng nấc (23/11/2026)
+
+Console cấp 3 hiện dùng **W mỗi lần +0,10 m/s; S mỗi lần −0,10 m/s**, giới hạn mặc định ±0,60 m/s. Nhấn X/Space để dừng; W/S xóa góc lái cũ. Dùng `ACKERMANN_DRIVE_PROFILE=moderate bash spawn_robot_stage.sh 3` trong world sạch để thử PID trung gian nếu profile `gentle` quá yếu. Thông số `moderate` chỉ là thử nghiệm, chưa bảo đảm lực kéo trên dốc. Xem [`README_STAGE3_CONTROL_VI.md`](README_STAGE3_CONTROL_VI.md).

@@ -251,12 +251,24 @@ class Mission:
         if dist<self.goal_tolerance:
             # Active braking force until vehicle is nearly stopped. Zero isn't a brake on a slope.
             return (-clamp(self.eq_mass*1.4*pose.v,-self.max_F,self.max_F),0.0,dist,dev,vref)
+        # The original sampler considered F0-30 even at low speed and could
+        # rank a standstill/negative-force rollout above useful forward motion.
+        # Search steering/drive options more broadly, but NEVER ignore collision
+        # and grade checks: if none are safe we still stop.
+        force_shifts=(-45.,-20.,0.,20.,45.)
         candidate_F=sorted(set(round(clamp(F0+shift,-self.max_F,self.max_F),3)
-                               for shift in (-30.,0.,30.)))
+                               for shift in force_shifts))
         candidate_delta=sorted(set(round(clamp(steer0+shift,-self.max_delta,self.max_delta),4)
-                                   for shift in (-0.12,0.,0.12)))
+                                   for shift in (-0.18,-0.09,0.,0.09,0.18)))
         best=None
+        start_progress=self.nearest_s_and_target((pose.x,pose.y))[0]
         for F in candidate_F:
+            # When nearly stationary and target speed is positive, commanding
+            # reverse torque to "avoid" a route tangent produces deadlock.
+            # A genuine obstacle can still force zero if every forward rollout
+            # fails the safety checks.
+            if pose.v < 0.25 and vref > 0.25 and F < self.min_progress_force:
+                continue
             for delta in candidate_delta:
                 pred=pose; safe=True; pathcost=0.; mindist=float('inf')
                 for _ in range(12):
@@ -270,8 +282,19 @@ class Mission:
                 if not safe:continue
                 d_goal=math.hypot(pred.x-self.goal[0],pred.y-self.goal[1])
                 d_tgt=math.hypot(pred.x-target[0],pred.y-target[1])
-                score=1.2*d_tgt+0.15*d_goal+0.22*pathcost/12-0.8*pred.v+0.001*abs(F-F0)+0.4*abs(delta-steer0)
-                if mindist<float('inf'):score+=0.15/max(mindist+0.2,0.12)
+                end_progress=self.nearest_s_and_target((pred.x,pred.y))[0]
+                progress=max(-1.,min(2.,end_progress-start_progress))
+                # Replaces the old '-0.8*pred.v' which wrongly rewarded
+                # overspeed and treated crossing 0.75m/s as cost-free.
+                speed_error=abs(pred.v-vref)
+                overspeed=max(0.,pred.v-vref)
+                score=(1.2*d_tgt+0.15*d_goal+0.22*pathcost/12
+                       +self.speed_tracking_cost_weight*speed_error
+                       +self.overspeed_cost_weight*overspeed*overspeed
+                       -0.45*progress
+                       +0.002*abs(F-F0)+0.4*abs(delta-steer0))
+                if mindist<float('inf'):
+                    score+=0.15/max(mindist+0.2,0.12)
                 if best is None or score<best[0]:best=(score,F,delta)
         if best is None:
             return (0.0,0.0,dist,dev,0.0)  # fail-safe without known safe rollout

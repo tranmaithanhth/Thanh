@@ -75,3 +75,22 @@ gz stats
 ```
 
 Nếu không có `/ackermann_vehicle/odom`, kiểm tra Gazebo có spawn thành công `terrain_probe_s3` và plugin `libgazebo_ros_ackermann_drive.so` có nạp không. Nếu không thấy `pitch/roll` thay đổi khi xe đi trên dốc, kiểm tra bản plugin được cài và tọa độ gốc `base_footprint`/hệ quy chiếu pose. Không bật lại LiDAR để kiểm tra việc này.
+## Chẩn đoán xe đứng im dù lệnh khác 0 (23/11/2026)
+
+Trong một thử nghiệm, xe đứng ở khoảng `(x=2.54, y=-3.52)` dù `cmd=(-0.10,0)`, odometry chỉ cho `v=-0.01 m/s`. Đó **không phải** giới hạn diện tích terrain (`x,y` đều thuộc khoảng -20..20 m). Vị trí `x=2.5` trùng điểm bắt đầu ramp, nhưng không chứng minh ramp là nguyên nhân.
+
+Bản cập nhật `tools/stage3_console.py` in `[WARN] STALL` khi có lệnh tiến/lùi từ 0.08 m/s nhưng vận tốc thân xe < 0.025 m/s liên tục ít nhất 4 s. Đó là cảnh báo **điều kiện chuyển động**, không phải khẳng định bánh xe đã bị khóa.
+
+**A/B test an toàn (không LiDAR, không camera, không sửa XACRO gốc):**
+
+1. Đóng **cả** Gazebo và console cũ. Chạy `bash run_world_clean.sh` và chắc chắn không có robot cũ.
+2. Thử cấu hình stage 3 gốc: `bash spawn_robot_stage.sh 3`, sau đó trong terminal riêng `bash stage3_control_feedback.sh --deadman 15`.
+3. Lặp thử với một phiên Gazebo sạch, nhưng spawn bằng:
+   ```bash
+   ACKERMANN_SAFE_FRICTION=1 bash spawn_robot_stage.sh 3
+   ```
+   Tùy chọn này đặt hệ số ma sát 4 bánh từ 1000 về 1.0 và bỏ `fdir1=0 0 1` **chỉ ở URDF tạm**. Giữ mọi tham số khác như cũ. Cùng tốc độ và đường chạy, so sánh xe có vượt `x=3` được không, độ lệch ngang, RTF và log `[WARN] STALL`.
+4. **Chỉ một bộ điều khiển:** kiểm tra `ros2 topic info /ackermann_vehicle/cmd_vel -v`; tránh chạy `drive_robot_on_terrain.sh` và `stage3_control_feedback.sh` đồng thời. `cmd=(...)` in trên console là lệnh nội bộ của console, chưa đủ xác nhận Gazebo nhận lệnh nếu có nhiều publisher.
+5. Để đối chiếu tốc độ mô phỏng: `timeout 8s gz stats`. Nếu chỉ có cấu hình ma sát gốc bị dừng, nguyên nhân cần kiểm tra nằm trong tiếp xúc bánh–đường; nếu cả hai cùng bị dừng, cần xem tiếp lực kéo PID/khớp và vị trí từng bánh.
+
+Lưu ý: không sử dụng `--deadman 60` cho các thử nghiệm gần chướng ngại; dùng 15 s và bấm X/Space để dừng sớm. Khi không cần lái, chạy `bash stage3_control_feedback.sh --monitor-only` (không phát lệnh, vẫn phản hồi tư thế).

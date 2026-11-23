@@ -47,12 +47,11 @@ class TestTerrainAndAutonomy(unittest.TestCase):
 
     def test_hill_start_boost_only_on_uphill(self):
         self.m.astar((-0.4,-2))
-        from planner_core import Mission
         # At x=4.5 the smooth ramp has a positive grade near its maximum.
         p=Pose(4.5,-2.5,0.0,0.0)
-        # This test checks the hill-start force floor, not Gazebo traction.
-        f,d,dist,dev,vref=self.m.local_force_steer(p)
-        self.assertGreaterEqual(f, self.cfg['hill_start_force_N'] - 30.0)
+        # Test the underlying feedback force floor, not rollout choice or Gazebo traction.
+        f,d,tgt,dist,dev,vref=self.m.feedback(p)
+        self.assertGreaterEqual(f, self.cfg['hill_start_force_N'] - 1e-6)
         self.assertLessEqual(abs(f),self.m.max_F+1e-7)
 
     def test_bounded_commands(self):

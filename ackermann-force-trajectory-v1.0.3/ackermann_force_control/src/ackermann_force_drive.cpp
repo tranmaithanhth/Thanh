@@ -30,9 +30,11 @@ public:
     };
     rear_l_ = joint("rear_left_wheel_joint");
     rear_r_ = joint("rear_right_wheel_joint");
+    front_l_ = joint("front_left_wheel_joint");
+    front_r_ = joint("front_right_wheel_joint");
     steer_l_ = joint("front_left_steer_joint");
     steer_r_ = joint("front_right_steer_joint");
-    if (!(rear_l_ && rear_r_ && steer_l_ && steer_r_)) return;
+    if (!(rear_l_ && rear_r_ && front_l_ && front_r_ && steer_l_ && steer_r_)) return;
     auto val = [&](const std::string &name, double default_value) {
       return sdf->Get<double>(name, default_value).first;
     };
@@ -40,6 +42,11 @@ public:
     wheelbase_ = val("wheelbase", 0.80);
     track_ = val("track_width", 0.50);
     max_force_ = val("max_force", 22.0 / 0.15);
+    drive_mode_ = sdf->Get<std::string>("drive_mode", "rear").first;
+    if (drive_mode_ != "rear" && drive_mode_ != "all") {
+      RCLCPP_ERROR(node_->get_logger(), "Invalid drive_mode '%s': rear or all required", drive_mode_.c_str());
+      return;
+    }
     max_steer_ = val("max_steer", 0.52);
     max_steer_rate_ = val("max_steer_rate", 0.95);
     kp_ = val("steering_kp", 25.0);
@@ -65,7 +72,9 @@ public:
     last_update_ = model_->GetWorld()->SimTime();
     update_connection_ = event::Events::ConnectWorldUpdateBegin(
       std::bind(&AckermannForceDrive::OnUpdate, this, std::placeholders::_1));
-    RCLCPP_INFO(node_->get_logger(), "Force Ackermann ready: |F|<=%.2f N, |delta|<=%.3f rad", max_force_, max_steer_);
+    RCLCPP_INFO(node_->get_logger(),
+      "Force Ackermann ready: |F|<=%.2f N, |delta|<=%.3f rad, drive=%s",
+      max_force_, max_steer_, drive_mode_.c_str());
   }
 
 private:
@@ -95,9 +104,17 @@ private:
     };
     pd(steer_l_, delta_l);
     pd(steer_r_, delta_r);
-    const double each_rear_torque = std::clamp(commanded_f, -max_force_, max_force_) * radius_ * 0.5;
+    // cmd F is a torque-equivalent TOTAL drive force, not guaranteed contact traction.
+    // In all-wheel-drive mode the same total torque is split four ways to increase
+    // available tire contact traction on grades. Rear-drive mode keeps MATLAB's
+    // rear-axle-only configuration for A/B comparisons.
+    const double total_torque = std::clamp(commanded_f, -max_force_, max_force_) * radius_;
+    const double each_rear_torque = total_torque / (drive_mode_ == "all" ? 4.0 : 2.0);
+    const double each_front_torque = drive_mode_ == "all" ? total_torque / 4.0 : 0.0;
     rear_l_->SetForce(0, each_rear_torque);
     rear_r_->SetForce(0, each_rear_torque);
+    front_l_->SetForce(0, each_front_torque);
+    front_r_->SetForce(0, each_front_torque);
     const auto pose = model_->WorldPose();
     const auto lv = model_->WorldLinearVel();
     const auto av = model_->WorldAngularVel();
@@ -120,14 +137,17 @@ private:
     odom.twist.twist.angular.z = av.Z();
     odom_pub_->publish(odom);
     std_msgs::msg::Float64MultiArray state;
-    // force N, steering target rad, steering actual average rad, rear L/R wheel rad/s, vehicle m/s
+    // First 6 elements are backwards-compatible. Extra: front wheel rad/s,
+    // applied rear/front torques per wheel (Nm). All values are signed.
     state.data = {commanded_f, reference_delta_, (steer_l_->Position(0) + steer_r_->Position(0)) * 0.5,
-                  rear_l_->GetVelocity(0), rear_r_->GetVelocity(0), odom.twist.twist.linear.x};
+                  rear_l_->GetVelocity(0), rear_r_->GetVelocity(0), odom.twist.twist.linear.x,
+                  front_l_->GetVelocity(0), front_r_->GetVelocity(0),
+                  each_rear_torque, each_front_torque};
     state_pub_->publish(state);
   }
 
   physics::ModelPtr model_;
-  physics::JointPtr rear_l_, rear_r_, steer_l_, steer_r_;
+  physics::JointPtr rear_l_, rear_r_, front_l_, front_r_, steer_l_, steer_r_;
   gazebo_ros::Node::SharedPtr node_;
   rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr cmd_sub_;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
@@ -139,6 +159,7 @@ private:
   bool seen_cmd_ = false;
   double target_force_ = 0.0, target_delta_ = 0.0, reference_delta_ = 0.0;
   double radius_ = 0.15, wheelbase_ = 0.8, track_ = 0.5;
+  std::string drive_mode_ = "rear";
   double max_force_ = 146.6667, max_steer_ = 0.52, max_steer_rate_ = 0.95;
   double kp_ = 25, kd_ = 3, max_steer_torque_ = 25, timeout_s_ = 0.6;
 };

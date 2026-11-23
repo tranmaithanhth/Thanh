@@ -29,9 +29,13 @@ LIDAR_JOINTS = {"lidar_joint"}
 CAMERA_JOINTS = {"camera_joint", "camera_optical_joint"}
 
 
-def make_stage(source: Path, target: Path, stage: int, safe_friction: bool) -> dict:
+def make_stage(source: Path, target: Path, stage: int, safe_friction: bool, drive_profile: str = 'original') -> dict:
     if stage not in range(6):
         raise ValueError("stage must be 0, 1, 2, 3, 4 or 5")
+    if drive_profile not in ('original', 'no_motors', 'gentle'):
+        raise ValueError('drive_profile must be original, no_motors or gentle')
+    if stage < 3 and drive_profile != 'original':
+        raise ValueError('drive PID profiles require stage >= 3')
     tree = ET.parse(source)
     root = tree.getroot()
     if root.tag != "robot":
@@ -85,6 +89,26 @@ def make_stage(source: Path, target: Path, stage: int, safe_friction: bool) -> d
                 for plugin in list(element.findall("plugin")):
                     if stage < 3 or plugin.get("name") != "ackermann_drive":
                         element.remove(plugin)
+                        continue
+                    if drive_profile != "original":
+                        # Diagnostic variants change only command-producing PIDs:
+                        # keep gazebo_ros_ackermann_drive plugin and world odometry.
+                        # no_motors: motors apply zero effort even if PID.Update runs.
+                        # gentle: much smaller P gains, no D kick, to test stability.
+                        gains = ({
+                            "linear_velocity_pid_gain": "0 0 0",
+                            "left_steering_pid_gain": "0 0 0",
+                            "right_steering_pid_gain": "0 0 0",
+                        } if drive_profile == "no_motors" else {
+                            "linear_velocity_pid_gain": "2 0 0",
+                            "left_steering_pid_gain": "20 0 0",
+                            "right_steering_pid_gain": "20 0 0",
+                        })
+                        for tag, values in gains.items():
+                            target_gain = plugin.find(tag)
+                            if target_gain is None:
+                                raise ValueError(f"Missing {tag} in ackermann_drive")
+                            target_gain.text = values
                 if len(element) == 0:
                     root.remove(element)
 
@@ -114,7 +138,7 @@ def make_stage(source: Path, target: Path, stage: int, safe_friction: bool) -> d
     ET.indent(tree, space="  ")
     tree.write(target, encoding="utf-8", xml_declaration=False)
     return {"stage": stage, "links": len(actual_links), "joints": len(actual_joints), "plugins": plugin_names,
-            "safe_friction": safe_friction}
+            "safe_friction": safe_friction, "drive_profile": drive_profile}
 
 
 def main() -> None:
@@ -124,8 +148,10 @@ def main() -> None:
     parser.add_argument("--stage", type=int, required=True, choices=range(6))
     parser.add_argument("--safe-friction", action="store_true",
                         help="Diagnostic only: lower wheel mu1/mu2 to 1.0, drop wheel fdir1")
+    parser.add_argument("--drive-profile", choices=['original', 'no_motors', 'gentle'], default='original',
+                        help='Ackermann Drive PID A/B tests; no motors keeps odometry, gentle lowers PID gains')
     args = parser.parse_args()
-    info = make_stage(args.source, args.output, args.stage, args.safe_friction)
+    info = make_stage(args.source, args.output, args.stage, args.safe_friction, args.drive_profile)
     print("Generated staged URDF:", args.output)
     print("Summary:", info)
 

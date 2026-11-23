@@ -52,6 +52,11 @@ class Mission:
         self.c = config
         self.obstacles = [tuple(map(float, q)) for q in config['obstacles_xy_radius']]
         self.infl = float(config['robot_inflation_radius_m'])
+        # Extra buffer for GLOBAL routes only. Local safety still checks
+        # the real inflated footprint, not an artificially larger body.
+        self.route_margin = float(config.get('route_clearance_margin_m', 0.0))
+        if self.route_margin < 0.0:
+            raise ValueError('route_clearance_margin_m must be nonnegative')
         self.bounds = tuple(map(float, config['route_bounds_xy']))
         self.grid = float(config['global_grid_resolution_m'])
         self.max_grade = float(config['max_terrain_grade'])
@@ -69,13 +74,22 @@ class Mission:
         self.eq_mass = self.mass + float(config['wheel_rotational_inertia_total_kgm2'])/self.Rw**2
         self.c_roll = float(config['rolling_viscous_N_s_m'])
         self.max_speed = float(config['max_speed_m_s'])
+        # Do not clamp rollout at the DESIRED speed. The vehicle can overshoot
+        # its reference, so the prediction model must preserve that overspeed.
+        self.physical_max_speed = float(config.get('physical_max_speed_m_s', max(1.45, self.max_speed)))
+        self.min_progress_force = float(config.get('min_progress_force_N', 0.0))
+        self.speed_tracking_cost_weight = float(config.get('speed_tracking_cost_weight', 4.0))
+        self.overspeed_cost_weight = float(config.get('overspeed_cost_weight', 14.0))
+        if self.physical_max_speed < self.max_speed or not (0 <= self.min_progress_force <= self.max_F):
+            raise ValueError('Invalid physical_max_speed_m_s or min_progress_force_N')
         self.goal_tolerance = float(config['goal_tolerance_m'])
         self.lookahead = float(config['lookahead_m'])
         if self.grid <= 0 or self.max_F <= 0 or self.L <= 0 or self.goal_tolerance <= 0:
             raise ValueError('Invalid mission model parameters')
         self.nx = round((self.bounds[1]-self.bounds[0])/self.grid)+1
         self.ny = round((self.bounds[3]-self.bounds[2])/self.grid)+1
-        self.occupied = [[not self.safe_xy(self.to_world(i,j)[0],self.to_world(i,j)[1])
+        self.occupied = [[not self.safe_xy(self.to_world(i,j)[0],self.to_world(i,j)[1],
+                                            margin=self.route_margin)
                           for i in range(self.nx)] for j in range(self.ny)]
         self.path = []
 
@@ -85,13 +99,13 @@ class Mission:
     def to_world(self, i, j):
         return (self.bounds[0]+i*self.grid, self.bounds[2]+j*self.grid)
 
-    def safe_xy(self,x,y):
+    def safe_xy(self,x,y,margin=0.0):
         if x <= self.bounds[0]+0.35 or x >= self.bounds[1]-0.35 or y <= self.bounds[2]+0.35 or y >= self.bounds[3]-0.35:
             return False
         _, hx, hy = terrain(x,y)
         if math.hypot(hx,hy)>self.max_grade:
             return False
-        return all(math.hypot(x-ox,y-oy) > rad+self.infl for ox,oy,rad in self.obstacles)
+        return all(math.hypot(x-ox,y-oy) > rad+self.infl+margin for ox,oy,rad in self.obstacles)
 
     def safe_motion(self,x,y,yaw):
         if not self.safe_xy(x,y): return False
@@ -101,16 +115,18 @@ class Mission:
         return abs(grade)<=self.max_grade and abs(cross)<=self.cross_grade
 
     def segment_safe(self,a,b):
+        # Global route simplification must retain the clearance used by A*.
         distance = math.hypot(b[0]-a[0], b[1]-a[1])
         steps = max(1, math.ceil(distance/0.10))
         for k in range(steps+1):
             t=k/steps
-            if not self.safe_xy(a[0]+t*(b[0]-a[0]),a[1]+t*(b[1]-a[1])):return False
+            if not self.safe_xy(a[0]+t*(b[0]-a[0]),a[1]+t*(b[1]-a[1]),
+                                margin=self.route_margin):return False
         return True
 
     def astar(self,start):
-        if not self.safe_xy(*start) or not self.safe_xy(*self.goal):
-            raise ValueError(f'Start or goal unsafe: start={start} goal={self.goal}; change mission bounds/spawn')
+        if not self.safe_xy(*start, margin=self.route_margin) or not self.safe_xy(*self.goal, margin=self.route_margin):
+            raise ValueError(f'Start or goal unsafe with route clearance: start={start} goal={self.goal}; change mission bounds/spawn')
         if self.segment_safe(start,self.goal):
             self.path=[tuple(start),self.goal]
             return self.path
@@ -225,7 +241,8 @@ class Mission:
         _,hx,hy=terrain(pose.x,pose.y)
         grade=hx*math.cos(pose.yaw)+hy*math.sin(pose.yaw)
         dv=(F-self.c_roll*pose.v-self.mass*9.81*grade)/self.eq_mass
-        v=clamp(pose.v+dt*dv,-self.max_speed,self.max_speed)
+        # Physical dynamics can exceed cruise reference; preserve overspeed.
+        v=clamp(pose.v+dt*dv,-self.physical_max_speed,self.physical_max_speed)
         yaw=wrap_pi(pose.yaw+dt*v*math.tan(delta)/self.L)
         return Pose(pose.x+dt*v*math.cos(yaw),pose.y+dt*v*math.sin(yaw),yaw,v)
 

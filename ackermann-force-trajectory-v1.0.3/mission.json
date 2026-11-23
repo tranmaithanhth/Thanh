@@ -1,20 +1,54 @@
 {
-  "goal_xy": [16.0, 0.6],
-  "obstacles_xy_radius": [[4.1, 0.3, 0.75], [7.3, 1.15, 0.72], [10.15, 0.35, 0.76], [12.4, 3.7, 0.73]],
-  "route_bounds_xy": [-6.0, 19.0, -6.0, 8.0],
-  "world_bounds_xy": [-20.0, 20.0, -20.0, 20.0],
+  "goal_xy": [
+    16,
+    0.6
+  ],
+  "obstacles_xy_radius": [
+    [
+      4.1,
+      0.3,
+      0.75
+    ],
+    [
+      7.3,
+      1.15,
+      0.72
+    ],
+    [
+      10.15,
+      0.35,
+      0.76
+    ],
+    [
+      12.4,
+      3.7,
+      0.73
+    ]
+  ],
+  "route_bounds_xy": [
+    -6,
+    19,
+    -6,
+    8
+  ],
+  "world_bounds_xy": [
+    -20,
+    20,
+    -20,
+    20
+  ],
   "global_grid_resolution_m": 0.35,
-  "robot_inflation_radius_m": 1.20,
-  "max_terrain_grade": 0.50,
+  "robot_inflation_radius_m": 1.2,
+  "max_terrain_grade": 0.5,
   "max_cross_grade": 0.38,
   "height_shift_gazebo_m": 0.06299934504640783,
-  "vehicle_mass_kg": 20.0,
+  "vehicle_mass_kg": 20,
   "wheelbase_m": 0.8,
   "wheel_radius_m": 0.15,
-  "rear_axle_offset_from_model_origin_m": 0.40,
+  "rear_axle_offset_from_model_origin_m": 0.4,
   "wheel_rotational_inertia_total_kgm2": 0.12,
   "rolling_viscous_N_s_m": 3.2,
-  "max_drive_force_N": 146.6666667,
+  "max_drive_force_N": 300,
   "max_steer_rad": 0.52,
   "max_steer_rate_rad_s": 0.95,
   "max_speed_m_s": 0.75,
@@ -22,7 +56,10 @@
   "lookahead_m": 1.9,
   "planner_control_hz": 10,
   "logging_hz": 2,
-  "max_runtime_s": 180.0,
-  "replan_after_deviation_m": 2.0,
-  "stuck_timeout_s": 12.0
+  "max_runtime_s": 180,
+  "replan_after_deviation_m": 2,
+  "stuck_timeout_s": 12,
+  "drive_mode": "all",
+  "hill_start_force_N": 175,
+  "hill_start_min_grade": 0.16
 }

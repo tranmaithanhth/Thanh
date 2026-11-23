@@ -126,3 +126,17 @@ bash manual_drive_v103.sh --force-step 10 --steer-step 0.05 --deadman 5
 ```
 
 W cộng **+10 N** mỗi lần, S giảm **−10 N** mỗi lần (qua 0 rồi mới lùi), A/D tăng giảm góc lái **0,05 rad** mỗi lần, C đưa góc lái về 0, X dừng phát động, Q thoát. Mọi lệnh bị chặn ở ±146,67 N và ±0,52 rad; hết 5 giây không nhấn sẽ trả về 0. Chương trình hiển thị liên tục vị trí, vận tốc thực và lực/góc ra lệnh. Dùng để xác định riêng khả năng xe lùi, trước khi khởi động A* tự hành.
+## 7. Xác nhận phiên bản MATLAB dùng làm chuẩn và phép thử khối lượng–ma sát
+
+**Nguồn so sánh chính:** tài liệu `Huong_dan_chi_tiet_code_Ackermann_Terrain3D_MATLAB_v1.0.4.docx`, phần `ackermann_cfg` / `terrain3d_reduced_rhs`. MATLAB Terrain3D **v1.0.4** dùng `c.m=20 kg`, `c.maxTorque=22 N.m`, `Jw=0.03 kg.m²/bánh`, `c.cv=0.8 N.s/m/bánh`, `tireK=1600 N/m` và `tireC=72 N.s/m`. Đừng nhầm với code `ackermann-simulink-v1.0.2/ackermann_cfg.m` cũ ở cùng repo, trong đó `c.maxTorque=7.5 N.m`. V1.0.3 chủ đích theo **Terrain3D v1.0.4**, không phải v1.0.2.
+
+**Độ tương đương:** tổng mass và hình học được khớp; ma sát không thể gọi là khớp chính xác vì MATLAB áp ràng buộc lăn không trượt + cản nhớt, trong khi Gazebo áp ma sát Coulomb tiếp xúc. Giá trị `mu=1.1` là **giả thiết hiệu chỉnh khởi đầu**, không phải hệ số rút ra từ MATLAB. Cặp `tireK/tireC` chưa được mô phỏng tương đương bằng hệ lốp/treo riêng; nếu cần kết quả lực `Fz` trùng MATLAB, phải bổ sung mô hình độ võng và giảm chấn bánh. Các quán tính nhập trên `chassis` là quán tính riêng của link, không bằng quán tính tổng hợp toàn xe với 4 bánh.
+
+**Chạy kiểm thử tĩnh trước khi điều khiển:**
+
+```bash
+cd ~/ackermann_humble_ws/Thanh/ackermann-force-trajectory-v1.0.3
+python3 -m unittest discover -s tests -v
+```
+
+Lệnh kiểm thử Python đối chiếu tổng khối lượng URDF giả lập, giá trị lực cực đại, các đoạn đường tránh vật cản và bộ tracker trên mô hình dự báo rút gọn. Đây **không thay thế** kiểm thử C++ plugin và tương tác lốp–đường trên Gazebo thật. Kiểm tra thêm khi Gazebo chạy: `ros2 topic echo /ackermann_vehicle/force_state` và so sánh vận tốc/chiều quay hai bánh sau với lực âm/dương để phát hiện hướng trục sai trước khi tự hành.

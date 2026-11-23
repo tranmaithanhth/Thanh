@@ -89,4 +89,6 @@ bash spawn_robot_on_terrain.sh
 bash drive_robot_on_terrain.sh
 ```
 
-Robot bắt đầu ở `(x=0,y=-2,z=0.30,yaw=0)` và chạy chậm dọc +X để thử lên/xuống dốc, tránh các vật cản trụ. Xem thêm [README_ROBOT.md](README_ROBOT.md). Đây là demo di chuyển thẳng; **chưa phải DWA/TEB tự động đến đích**.
+Robot bắt đầu ở `(x=0,y=-2,z=0.10,yaw=0)` và chạy chậm dọc +X để thử lên/xuống dốc, tránh các vật cản trụ. Xem thêm [README_ROBOT.md](README_ROBOT.md). Đây là demo di chuyển thẳng; **chưa phải DWA/TEB tự động đến đích**.
+
+**Nếu robot trông như đang lơ lửng:** nhìn góc dưới trái Gazebo. Khi có nút tam giác `▶ Play` và **Real Time Factor = 0**, mô phỏng đang Pause: nhấn Play để bật trọng lực và tiếp xúc. Spawn hiện đặt `z=0.10` m (base_footprint) để bánh gần mặt đất ở `(0,-2)`; có thể đổi bằng `ACKERMANN_SPAWN_Z=0.15 bash spawn_robot_on_terrain.sh` trước khi spawn. Robot đã spawn trước đó sẽ không tự đổi cao độ: nếu muốn thả lại, phải xóa entity cũ hoặc khởi động lại world và spawn mới.

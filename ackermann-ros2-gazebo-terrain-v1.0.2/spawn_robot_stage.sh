@@ -3,7 +3,7 @@
 # Usage: bash spawn_robot_stage.sh 0..5
 # Optional: ACKERMANN_SAFE_FRICTION=1 bash spawn_robot_stage.sh 2
 # Optional spawn pose: ACKERMANN_SPAWN_X=-4 ACKERMANN_SPAWN_Y=-2 bash spawn_robot_stage.sh 3
-# Optional PID test: ACKERMANN_DRIVE_PROFILE=no_motors|gentle bash spawn_robot_stage.sh 3
+# Optional PID test: ACKERMANN_DRIVE_PROFILE=no_motors|gentle|moderate bash spawn_robot_stage.sh 3
 set -eo pipefail
 STAGE="${1:-}"
 if [[ ! "$STAGE" =~ ^[0-5]$ ]]; then
@@ -17,8 +17,8 @@ SPAWN_Y="${ACKERMANN_SPAWN_Y:--2.0}"
 SPAWN_Z="${ACKERMANN_SPAWN_Z:-0.10}"
 SAFE="${ACKERMANN_SAFE_FRICTION:-0}"
 DRIVE_PROFILE="${ACKERMANN_DRIVE_PROFILE:-original}"
-if [[ ! "$DRIVE_PROFILE" =~ ^(original|no_motors|gentle)$ ]]; then
-  echo "Invalid ACKERMANN_DRIVE_PROFILE=$DRIVE_PROFILE (use original/no_motors/gentle)" >&2
+if [[ ! "$DRIVE_PROFILE" =~ ^(original|no_motors|gentle|moderate)$ ]]; then
+  echo "Invalid ACKERMANN_DRIVE_PROFILE=$DRIVE_PROFILE (use original/no_motors/gentle/moderate)" >&2
   exit 2
 fi
 [[ -f "$WS/install/setup.bash" ]] || { echo "Missing ROS workspace: $WS/install/setup.bash" >&2; exit 1; }

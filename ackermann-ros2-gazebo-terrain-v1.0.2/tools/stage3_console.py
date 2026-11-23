@@ -84,8 +84,11 @@ class Stage3Console(Node):
         if args.monitor_only:
             print('[MODE] Monitor-only: no speed commands will be sent.', flush=True)
         else:
-            print(f'[KEYS] w: forward +0.25 | s: reverse -{args.reverse_speed:.2f} | a: turn left | d: turn right', flush=True)
-            print('       w/s also reset steering to straight | c: straighten | x/SPACE: stop | q: exit', flush=True)
+            print(f'[KEYS] w: +{args.speed_step:.2f} m/s each press | '
+                  f's: -{args.speed_step:.2f} m/s each press', flush=True)
+            print(f'       limits: forward +{args.max_speed:.2f}, reverse -{args.reverse_limit:.2f} m/s; '
+                  'A/D: steering; C: straighten; X/SPACE: stop; Q: exit', flush=True)
+            print('       W/S reset steering to straight. Reverse direction goes through zero.', flush=True)
             print(f'[SAFETY] No LiDAR: automatic stop after {args.deadman:.1f} s without a key; '
                   f'zero command if odom is stale for {args.stale:.1f} s.', flush=True)
 
@@ -125,13 +128,18 @@ class Stage3Console(Node):
         if ch not in ('w', 's', 'a', 'd', 'c', 'x', ' '):
             return
         self.last_key_at = time.monotonic()
-        if ch == 'w':
-            self.commanded_speed = 0.25
-            # Treat W/S as a fresh straight-drive request, not a latched turn.
+        if ch in ('w', 's'):
+            direction = 1 if ch == 'w' else -1
+            desired = self.commanded_speed + direction * self.args.speed_step
+            # Require at least one zero-speed step before swapping direction.
+            if (self.commanded_speed < -1e-6 and desired > 0.0) or (
+                    self.commanded_speed > 1e-6 and desired < 0.0):
+                desired = 0.0
+            self.commanded_speed = round(
+                max(-self.args.reverse_limit, min(self.args.max_speed, desired)), 3)
+            # W/S represent a new straight driving command; do not retain A/D.
             self.commanded_yaw_rate = 0.0
-        elif ch == 's':
-            self.commanded_speed = -self.args.reverse_speed
-            self.commanded_yaw_rate = 0.0
+            print(f'\n[CMD] target v={self.commanded_speed:+.2f} m/s | steering=0 rad', flush=True)
         elif ch == 'a':
             self.commanded_yaw_rate = 0.25
         elif ch == 'd':
@@ -231,12 +239,22 @@ def main():
     parser.add_argument('--csv', default='~/ackermann_stage3_pose.csv', help='CSV telemetry path; empty disables logging')
     parser.add_argument('--deadman', type=float, default=3.0, help='Key inactivity auto-stop, seconds')
     parser.add_argument('--stale', type=float, default=2.0, help='Odometry timeout, seconds')
-    parser.add_argument('--reverse-speed', type=float, default=0.10, help='Reverse speed magnitude (m/s), 0.05..0.50')
+    parser.add_argument('--speed-step', type=float, default=0.10,
+                        help='Change commanded speed on each W/S keypress (default: 0.10 m/s)')
+    parser.add_argument('--max-speed', type=float, default=0.60,
+                        help='Maximum forward speed and default reverse speed magnitude (default: 0.60 m/s)')
+    parser.add_argument('--reverse-speed', type=float, default=None,
+                        help='Optional reverse speed LIMIT for compatibility (not a one-press setpoint)')
     args = parser.parse_args()
     if args.deadman <= 0 or args.stale <= 0:
         parser.error('deadman and stale timeouts must be positive')
-    if not (0.05 <= args.reverse_speed <= 0.50):
-        parser.error('--reverse-speed must be between 0.05 and 0.50 m/s')
+    if not (0.01 <= args.speed_step <= 0.30):
+        parser.error('--speed-step must be between 0.01 and 0.30 m/s')
+    if not (0.10 <= args.max_speed <= 1.0):
+        parser.error('--max-speed must be between 0.10 and 1.0 m/s')
+    if args.reverse_speed is not None and not (0.10 <= args.reverse_speed <= 1.0):
+        parser.error('--reverse-speed (reverse limit) must be between 0.10 and 1.0 m/s')
+    args.reverse_limit = args.max_speed if args.reverse_speed is None else args.reverse_speed
     if not args.monitor_only and not sys.stdin.isatty():
         parser.error('keyboard mode needs an interactive terminal; use --monitor-only instead')
     rclpy.init()

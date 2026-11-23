@@ -32,8 +32,8 @@ CAMERA_JOINTS = {"camera_joint", "camera_optical_joint"}
 def make_stage(source: Path, target: Path, stage: int, safe_friction: bool, drive_profile: str = 'original') -> dict:
     if stage not in range(6):
         raise ValueError("stage must be 0, 1, 2, 3, 4 or 5")
-    if drive_profile not in ('original', 'no_motors', 'gentle'):
-        raise ValueError('drive_profile must be original, no_motors or gentle')
+    if drive_profile not in ('original', 'no_motors', 'gentle', 'moderate'):
+        raise ValueError('drive_profile must be original, no_motors, gentle or moderate')
     if stage < 3 and drive_profile != 'original':
         raise ValueError('drive PID profiles require stage >= 3')
     tree = ET.parse(source)
@@ -94,16 +94,26 @@ def make_stage(source: Path, target: Path, stage: int, safe_friction: bool, driv
                         # Diagnostic variants change only command-producing PIDs:
                         # keep gazebo_ros_ackermann_drive plugin and world odometry.
                         # no_motors: motors apply zero effort even if PID.Update runs.
-                        # gentle: much smaller P gains, no D kick, to test stability.
-                        gains = ({
-                            "linear_velocity_pid_gain": "0 0 0",
-                            "left_steering_pid_gain": "0 0 0",
-                            "right_steering_pid_gain": "0 0 0",
-                        } if drive_profile == "no_motors" else {
-                            "linear_velocity_pid_gain": "2 0 0",
-                            "left_steering_pid_gain": "20 0 0",
-                            "right_steering_pid_gain": "20 0 0",
-                        })
+                        # gentle: P=2 drive; moderate: P=15 drive; original P=1000 D=1.
+                        # These are diagnostic profiles, not tuned controller gains.
+                        profiles = {
+                            "no_motors": {
+                                "linear_velocity_pid_gain": "0 0 0",
+                                "left_steering_pid_gain": "0 0 0",
+                                "right_steering_pid_gain": "0 0 0",
+                            },
+                            "gentle": {
+                                "linear_velocity_pid_gain": "2 0 0",
+                                "left_steering_pid_gain": "20 0 0",
+                                "right_steering_pid_gain": "20 0 0",
+                            },
+                            "moderate": {
+                                "linear_velocity_pid_gain": "15 0 0",
+                                "left_steering_pid_gain": "80 0 0",
+                                "right_steering_pid_gain": "80 0 0",
+                            },
+                        }
+                        gains = profiles[drive_profile]
                         for tag, values in gains.items():
                             target_gain = plugin.find(tag)
                             if target_gain is None:
@@ -148,8 +158,8 @@ def main() -> None:
     parser.add_argument("--stage", type=int, required=True, choices=range(6))
     parser.add_argument("--safe-friction", action="store_true",
                         help="Diagnostic only: lower wheel mu1/mu2 to 1.0, drop wheel fdir1")
-    parser.add_argument("--drive-profile", choices=['original', 'no_motors', 'gentle'], default='original',
-                        help='Ackermann Drive PID A/B tests; no motors keeps odometry, gentle lowers PID gains')
+    parser.add_argument("--drive-profile", choices=['original', 'no_motors', 'gentle', 'moderate'], default='original',
+                        help='Ackermann Drive PID A/B tests; no motors for drifting, gentle=low torque, moderate=intermediate')
     args = parser.parse_args()
     info = make_stage(args.source, args.output, args.stage, args.safe_friction, args.drive_profile)
     print("Generated staged URDF:", args.output)

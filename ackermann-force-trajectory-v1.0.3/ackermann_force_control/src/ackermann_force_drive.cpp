@@ -1,6 +1,7 @@
 // Ackermann Terrain3D v1.0.3 - Gazebo Classic 11 + ROS 2 Humble
 // Subscribes to std_msgs/Float64MultiArray [drive_force_N, steer_rad].
-// Applies tau = F*R/2 to EACH REAR wheel, Ackermann PD to front steering joints.
+// In drive_mode=all, applies tau = F*R/4 to EACH of 4 wheels; drive_mode=rear uses F*R/2 at each rear.
+// Ackermann PD actuates steering joints independently of traction motors.
 // Unlike gazebo_ros_ackermann_drive, NEVER interprets force as target velocity.
 #include <algorithm>
 #include <cmath>

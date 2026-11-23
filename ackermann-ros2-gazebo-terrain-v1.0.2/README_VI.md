@@ -79,3 +79,14 @@ bash run_world_clean.sh 2>&1 | tee ~/ackermann_gazebo_error.log
 ```
 
 Không tự xóa thư mục `~/.gazebo` hoặc `~/.ros`. Nếu `gzserver/gzclient` cũ còn chạy, đóng chúng trước khi mở world mới. Việc các file XML/PNG hợp lệ không bảo đảm plugin, GUI hoặc GPU đang hoạt động; dùng log để xác định chính xác.
+
+## Spawn robot Ackermann vào world đang chạy
+
+Đã bổ sung `spawn_robot_on_terrain.sh`, `drive_robot_on_terrain.sh` và `tools/drive_slope_demo.py`. **Không chạy launch Gazebo của robot gốc**, vì nó sẽ mở world khác. Giữ world v1.0.2 mở, rồi chạy các lệnh sau tại thư mục này trong terminal mới:
+
+```bash
+bash spawn_robot_on_terrain.sh
+bash drive_robot_on_terrain.sh
+```
+
+Robot bắt đầu ở `(x=0,y=-2,z=0.30,yaw=0)` và chạy chậm dọc +X để thử lên/xuống dốc, tránh các vật cản trụ. Xem thêm [README_ROBOT.md](README_ROBOT.md). Đây là demo di chuyển thẳng; **chưa phải DWA/TEB tự động đến đích**.

@@ -58,6 +58,8 @@ class Stage3Console(Node):
         self.stale_warning = False
         self.stall_since = None
         self.last_stall_report = 0.0
+        self.started_at = time.monotonic()
+        self.checked_publishers = False
         self.exit_requested = False
         self.odom_sub = self.create_subscription(Odometry, ODOM, self.on_odom, 10)
         self.pose_pub = self.create_publisher(PoseStamped, POSE, 10)
@@ -149,6 +151,18 @@ class Stage3Console(Node):
 
     def tick(self):
         now = time.monotonic()
+        if (not self.args.monitor_only and now - self.started_at > 2.0):
+            num_publishers = self.count_publishers(CMD)
+            if num_publishers != 1:
+                print(f'\n[ERROR] cmd_vel PUBLISHER CONFLICT: found {num_publishers} publishers; '
+                      'expected exactly 1 (this console). Close other ROS cmd_vel programs. '
+                      'Run: ros2 topic info /ackermann_vehicle/cmd_vel -v', flush=True)
+                self.zero()
+                self.exit_requested = True
+                return
+            if not self.checked_publishers:
+                print('[CHECK] cmd_vel: one publisher, no competing controller detected.', flush=True)
+                self.checked_publishers = True
         fresh = self.received_at is not None and now - self.received_at < self.args.stale
         active = fresh and now - self.last_key_at < self.args.deadman
         if not active and (self.commanded_speed != 0.0 or self.commanded_yaw_rate != 0.0):
@@ -202,9 +216,11 @@ class Stage3Console(Node):
     def close(self):
         self.zero()
         if self.cmd_pub is not None:
-            for _ in range(8):
-                self.publish_cmd(0.0, 0.0)
-                rclpy.spin_once(self, timeout_sec=0.04)
+            # Do not fight another publisher during shutdown. Its owner must be stopped separately.
+            if self.count_publishers(CMD) == 1:
+                for _ in range(8):
+                    self.publish_cmd(0.0, 0.0)
+                    rclpy.spin_once(self, timeout_sec=0.04)
         if self.csv_file is not None:
             self.csv_file.close()
 

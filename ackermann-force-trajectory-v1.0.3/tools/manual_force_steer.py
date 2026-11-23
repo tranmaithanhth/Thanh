@@ -23,6 +23,9 @@ class ManualForce(Node):
         self.args=args
         self.pub=self.create_publisher(Float64MultiArray,'/ackermann_vehicle/force_steer',10)
         self.sub=self.create_subscription(Odometry,'/ackermann_vehicle/odom',self.on_odom,10)
+        self.state_sub=self.create_subscription(
+            Float64MultiArray,'/ackermann_vehicle/force_state',self.on_force_state,10)
+        self.state=None
         self.F=0.0;self.delta=0.0;self.last_key=time.monotonic();self.last_odom=0.
         self.odom=None;self.exit=False;self.start=time.monotonic();self.last_print=0.
         print('[KEYS] W: +force; S: -force (through zero); A/D: steer; C: center; X/Space: zero; Q: exit')
@@ -30,6 +33,10 @@ class ManualForce(Node):
 
     def on_odom(self,msg):
         self.odom=msg;self.last_odom=time.monotonic()
+
+    def on_force_state(self,msg):
+        if len(msg.data)>=8 and all(math.isfinite(q) for q in msg.data):
+            self.state=msg
 
     def zero(self):
         self.F=0.;self.delta=0.
@@ -71,6 +78,16 @@ class ManualForce(Node):
                 p=self.odom.pose.pose.position;v=self.odom.twist.twist.linear.x
                 print(f'[POSE] XYZ=({p.x:+.3f},{p.y:+.3f},{p.z:+.3f}) v={v:+.3f}m/s '
                       f'F={self.F:+.1f}N delta={math.degrees(self.delta):+.1f}deg',flush=True)
+                if self.state is not None:
+                    d=self.state.data
+                    # force_state extension: rear L/R rad/s indices 3/4; front L/R 6/7.
+                    wl=(d[3],d[4],d[6],d[7])
+                    wheel_surface_speed=sum(abs(w)*0.15 for w in wl)/4.
+                    warning=' [WARN] WHEELS SPIN / BODY NEARLY STOPPED' if (
+                        abs(self.F)>60 and abs(v)<0.05 and wheel_surface_speed>0.25) else ''
+                    print(f'  [WHEELS] RL={wl[0]:+.2f}, RR={wl[1]:+.2f}, '
+                          f'FL={wl[2]:+.2f}, FR={wl[3]:+.2f} rad/s '
+                          f'| wheel_surface≈{wheel_surface_speed:.2f}m/s{warning}',flush=True)
             else:print('[POSE] Awaiting odom from v1.0.3 force plugin...',flush=True)
 
 

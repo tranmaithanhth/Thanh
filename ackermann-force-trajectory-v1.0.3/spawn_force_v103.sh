@@ -8,6 +8,11 @@ SPAWN_X="${ACKERMANN_SPAWN_X:-0.0}"
 SPAWN_Y="${ACKERMANN_SPAWN_Y:--2.0}"
 SPAWN_Z="${ACKERMANN_SPAWN_Z:-0.055}"
 [[ -f "$WS/install/ackermann_force_control/lib/libackermann_force_drive.so" ]] || { echo 'Run bash setup_v103.sh first.' >&2; exit 1; }
+# Fail early if the physics-step force fix has not been recompiled.
+if [[ "$ROOT/ackermann_force_control/src/ackermann_force_drive.cpp" -nt "$WS/install/ackermann_force_control/lib/libackermann_force_drive.so" ]]; then
+  echo 'ERROR: stale force plugin .so. Run: bash setup_v103.sh' >&2
+  exit 1
+fi
 exec env -i HOME="$HOME" USER="${USER:-$(id -un)}" LOGNAME="${LOGNAME:-$(id -un)}" \
  PATH=/usr/local/bin:/usr/bin:/bin LANG="${LANG:-C.UTF-8}" ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}" \
  V103_ROOT="$ROOT" BASE="$BASE" ACKERMANN_WS="$WS" SPAWN_X="$SPAWN_X" SPAWN_Y="$SPAWN_Y" SPAWN_Z="$SPAWN_Z" \

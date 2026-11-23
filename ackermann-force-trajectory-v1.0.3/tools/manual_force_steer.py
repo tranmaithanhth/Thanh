@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Keyboard manual force [N] / equivalent steering [rad], ROS 2 Humble."""
 import argparse
+import json
+from pathlib import Path
 import math
 import os
 import select
@@ -74,13 +76,18 @@ class ManualForce(Node):
 
 def main():
     ap=argparse.ArgumentParser()
-    ap.add_argument('--force-step',type=float,default=10.)
+    ap.add_argument('--params',type=Path,default=Path(__file__).resolve().parents[1]/'matlab_vehicle_params.json')
+    ap.add_argument('--force-step',type=float,default=20.)
     ap.add_argument('--steer-step',type=float,default=0.05)
-    ap.add_argument('--max-force',type=float,default=146.6666667)
+    ap.add_argument('--max-force',type=float,default=None,help='Optional cap, never above force limit in params JSON')
     ap.add_argument('--max-steer',type=float,default=.52)
     ap.add_argument('--deadman',type=float,default=5.)
     a=ap.parse_args()
-    if not (0<a.force_step<=a.max_force<=146.667) or not(0<a.steer_step<=a.max_steer<=.52) or a.deadman<=0:
+    limits=json.loads(a.params.read_text(encoding='utf-8'))
+    profile_force=float(limits['max_drive_force_N'])
+    if a.max_force is None:
+        a.max_force=profile_force
+    if not (0<a.force_step<=a.max_force<=profile_force+1e-6) or not(0<a.steer_step<=a.max_steer<=.52) or a.deadman<=0:
         ap.error('Invalid force/steering/rate limits')
     if not sys.stdin.isatty():ap.error('Needs interactive Terminal')
     rclpy.init();node=ManualForce(a)

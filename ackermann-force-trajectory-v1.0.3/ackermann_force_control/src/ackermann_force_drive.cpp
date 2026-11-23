@@ -71,6 +71,7 @@ public:
     odom_pub_ = node_->create_publisher<nav_msgs::msg::Odometry>("odom", rclcpp::QoS(10));
     state_pub_ = node_->create_publisher<std_msgs::msg::Float64MultiArray>("force_state", rclcpp::QoS(10));
     last_update_ = model_->GetWorld()->SimTime();
+    last_publish_ = last_update_;
     update_connection_ = event::Events::ConnectWorldUpdateBegin(
       std::bind(&AckermannForceDrive::OnUpdate, this, std::placeholders::_1));
     RCLCPP_INFO(node_->get_logger(),
@@ -80,8 +81,11 @@ public:
 
 private:
   void OnUpdate(const common::UpdateInfo &info) {
+    // Gazebo ODE expects SetForce to be issued on EVERY simulation step.
+    // The physics step is 0.001 s in this world. Do not throttle actuation
+    // to 100 Hz: doing so produces only a small fraction of requested torque.
     const double dt = (info.simTime - last_update_).Double();
-    if (dt <= 0.0 || dt < 0.01) return;
+    if (dt <= 0.0) return;
     const double capped_dt = std::min(dt, 0.05);
     last_update_ = info.simTime;
     double commanded_f = 0, commanded_delta = 0;
@@ -116,6 +120,12 @@ private:
     rear_r_->SetForce(0, each_rear_torque);
     front_l_->SetForce(0, each_front_torque);
     front_r_->SetForce(0, each_front_torque);
+
+    // The actuator loop is every physics step, but ROS publications are only
+    // 50 Hz. Keep this gate BELOW all wheel and steering SetForce calls.
+    if ((info.simTime - last_publish_).Double() < 0.02) return;
+    last_publish_ = info.simTime;
+
     const auto pose = model_->WorldPose();
     const auto lv = model_->WorldLinearVel();
     const auto av = model_->WorldAngularVel();
@@ -157,6 +167,7 @@ private:
   std::mutex mutex_;
   common::Time last_cmd_sim_;
   common::Time last_update_;
+  common::Time last_publish_;
   bool seen_cmd_ = false;
   double target_force_ = 0.0, target_delta_ = 0.0, reference_delta_ = 0.0;
   double radius_ = 0.15, wheelbase_ = 0.8, track_ = 0.5;

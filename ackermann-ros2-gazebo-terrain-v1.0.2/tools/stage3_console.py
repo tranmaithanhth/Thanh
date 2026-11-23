@@ -82,7 +82,7 @@ class Stage3Console(Node):
         if args.monitor_only:
             print('[MODE] Monitor-only: no speed commands will be sent.', flush=True)
         else:
-            print('[KEYS] w: forward 0.25 | s: reverse -0.10 | a: turn left | d: turn right', flush=True)
+            print(f'[KEYS] w: forward +0.25 | s: reverse -{args.reverse_speed:.2f} | a: turn left | d: turn right', flush=True)
             print('       c: straighten | x/SPACE: stop | q: stop and exit', flush=True)
             print(f'[SAFETY] No LiDAR: automatic stop after {args.deadman:.1f} s without a key; '
                   f'zero command if odom is stale for {args.stale:.1f} s.', flush=True)
@@ -126,7 +126,7 @@ class Stage3Console(Node):
         if ch == 'w':
             self.commanded_speed = 0.25
         elif ch == 's':
-            self.commanded_speed = -0.10
+            self.commanded_speed = -self.args.reverse_speed
         elif ch == 'a':
             self.commanded_yaw_rate = 0.25
         elif ch == 'd':
@@ -212,9 +212,12 @@ def main():
     parser.add_argument('--csv', default='~/ackermann_stage3_pose.csv', help='CSV telemetry path; empty disables logging')
     parser.add_argument('--deadman', type=float, default=3.0, help='Key inactivity auto-stop, seconds')
     parser.add_argument('--stale', type=float, default=2.0, help='Odometry timeout, seconds')
+    parser.add_argument('--reverse-speed', type=float, default=0.10, help='Reverse speed magnitude (m/s), 0.05..0.50')
     args = parser.parse_args()
     if args.deadman <= 0 or args.stale <= 0:
         parser.error('deadman and stale timeouts must be positive')
+    if not (0.05 <= args.reverse_speed <= 0.50):
+        parser.error('--reverse-speed must be between 0.05 and 0.50 m/s')
     if not args.monitor_only and not sys.stdin.isatty():
         parser.error('keyboard mode needs an interactive terminal; use --monitor-only instead')
     rclpy.init()

@@ -125,3 +125,40 @@ Lưu ý: vùng terrain tồn tại x,y từ -20 đến 20 m. Kịch bản thử 
 5. Nếu **chỉ có một publisher** mà lùi vẫn không được trên đất phẳng, mới chuyển sang kiểm tra PID lực truyền động và chiều quay khớp bánh. Không tăng PID bừa bãi hoặc gọi `gz joint --force` lên stage 3 khi plugin cũng đang điều khiển bánh.
 
 Lưu ý: Một lệnh `ros2 topic pub --once` gửi zero không ngăn script khác tiếp tục phát lệnh tiến. Phải đóng publisher cạnh tranh.
+
+## 23/11/2026 — Thử nghiệm PID khi cấp 2 đứng yên, cấp 3 tự tiến
+
+Sau khi xác nhận stage 2 không tự chạy và stage 3 tự tiến dù không bật console, cần kiểm tra chính phần mômen do plugin Ackermann tạo ra. Trong XACRO gốc, `linear_velocity_pid_gain = 1000 0 1`; `gazebo::common::PID` mặc định không chặn độ lớn mômen đầu ra. Các yếu tố này có thể khiến điều khiển rung/không ổn định. **Không kết luận ngay là do PID nếu chưa thử.**
+
+Thử A – **tách lực động cơ khỏi plugin**, vẫn có odom: đóng Gazebo, mở world sạch và spawn:
+
+```bash
+bash run_world_clean.sh
+# Mở Terminal KHÁC:
+ACKERMANN_DRIVE_PROFILE=no_motors bash spawn_robot_stage.sh 3
+```
+
+Đừng chạy console hay bất kỳ lệnh cmd_vel. Đợi xe ổn định 5–10 giây: nếu không tự tiến nữa thì có bằng chứng cho thấy **mômen điều khiển PID** là nguồn gây chuyển động. Profile `no_motors` chỉ dùng chẩn đoán, **không thể lái xe**.
+
+Thử B – **PID nhẹ**: đóng Gazebo cũ, khởi động world sạch và spawn:
+
+```bash
+bash run_world_clean.sh
+# Mở Terminal KHÁC:
+ACKERMANN_DRIVE_PROFILE=gentle bash spawn_robot_stage.sh 3
+```
+
+Profile `gentle` sửa riêng PID trong URDF tạm: vận tốc bánh sau `2 0 0`, khớp lái trái/phải `20 0 0`; giảm nhiều so với giá trị gốc `1000 0 1` và `1500 0 1`. Không thay đổi khớp, ma sát, world hoặc LiDAR. Kiểm tra xe **đứng yên** 5–10 giây trước khi thử lái:
+
+```bash
+bash stage3_control_feedback.sh --deadman 10 --reverse-speed 0.25
+```
+
+Nhấn `X` để dừng, `S` để lùi trên vùng phẳng, `W` để tiến. Đây là phép thử hệ số PID ban đầu **chưa hiệu chỉnh/kiểm chứng**; nếu chưa đủ mômen để xe đi thì không tự tăng PID đột ngột. Tắt console bằng `Q`.
+
+So sánh:
+- Stage 3 gốc tự tiến, `no_motors` đứng yên, `gentle` đứng yên và đi/lùi đúng → tập trung vào bộ PID quá mạnh; phải kiểm thử tiếp trên đoạn dốc và kiểm soát mômen.
+- `no_motors` vẫn tự tiến → kiểm tra trọng lực, va chạm và tác động phụ khác của plugin; không đổ lỗi cho PID.
+- `no_motors` đứng yên nhưng `gentle` vẫn tự tiến hoặc không lùi → kiểm tra phản hồi chiều quay từng bánh và động học khớp, chưa coi vấn đề đã sửa.
+
+Các profile trên chỉ có hiệu lực khi sinh URDF bằng `spawn_robot_stage.sh 3`. File `src/ackermann_vehicle` trong workspace và XACRO gốc **không bị sửa**. Không chạy cùng lúc `drive_robot_on_terrain.sh`, `test_stage3_reverse.sh` hoặc một `ros2 topic pub` khác.

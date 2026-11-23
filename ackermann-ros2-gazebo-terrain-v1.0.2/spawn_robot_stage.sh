@@ -3,6 +3,7 @@
 # Usage: bash spawn_robot_stage.sh 0..5
 # Optional: ACKERMANN_SAFE_FRICTION=1 bash spawn_robot_stage.sh 2
 # Optional spawn pose: ACKERMANN_SPAWN_X=-4 ACKERMANN_SPAWN_Y=-2 bash spawn_robot_stage.sh 3
+# Optional PID test: ACKERMANN_DRIVE_PROFILE=no_motors|gentle bash spawn_robot_stage.sh 3
 set -eo pipefail
 STAGE="${1:-}"
 if [[ ! "$STAGE" =~ ^[0-5]$ ]]; then
@@ -15,12 +16,17 @@ SPAWN_X="${ACKERMANN_SPAWN_X:-0.0}"
 SPAWN_Y="${ACKERMANN_SPAWN_Y:--2.0}"
 SPAWN_Z="${ACKERMANN_SPAWN_Z:-0.10}"
 SAFE="${ACKERMANN_SAFE_FRICTION:-0}"
+DRIVE_PROFILE="${ACKERMANN_DRIVE_PROFILE:-original}"
+if [[ ! "$DRIVE_PROFILE" =~ ^(original|no_motors|gentle)$ ]]; then
+  echo "Invalid ACKERMANN_DRIVE_PROFILE=$DRIVE_PROFILE (use original/no_motors/gentle)" >&2
+  exit 2
+fi
 [[ -f "$WS/install/setup.bash" ]] || { echo "Missing ROS workspace: $WS/install/setup.bash" >&2; exit 1; }
 exec env -i \
  HOME="$HOME" USER="${USER:-$(id -un)}" LOGNAME="${LOGNAME:-$(id -un)}" \
  PATH="/usr/local/bin:/usr/bin:/bin" LANG="${LANG:-C.UTF-8}" \
  ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}" ACKERMANN_WS="$WS" \
- STAGE="$STAGE" ROOT="$ROOT" SPAWN_X="$SPAWN_X" SPAWN_Y="$SPAWN_Y" SPAWN_Z="$SPAWN_Z" SAFE="$SAFE" \
+ STAGE="$STAGE" ROOT="$ROOT" SPAWN_X="$SPAWN_X" SPAWN_Y="$SPAWN_Y" SPAWN_Z="$SPAWN_Z" SAFE="$SAFE" DRIVE_PROFILE="$DRIVE_PROFILE" \
  bash --noprofile --norc -c '
 set -eo pipefail
 source /opt/ros/humble/setup.bash
@@ -52,9 +58,9 @@ OPTS=()
 if [[ "$SAFE" == 1 ]]; then OPTS+=(--safe-friction); fi
 python3 "$ROOT/tools/build_robot_stage.py" \
  --source "$TMP/robot_full.urdf" --output "$TMP/robot_stage.urdf" \
- --stage "$STAGE" "${OPTS[@]}"
+ --stage "$STAGE" --drive-profile "$DRIVE_PROFILE" "${OPTS[@]}"
 ENTITY="terrain_probe_s$STAGE"
-echo "[SPAWN] $ENTITY at x=$SPAWN_X y=$SPAWN_Y z=$SPAWN_Z"
+echo "[SPAWN] $ENTITY at x=$SPAWN_X y=$SPAWN_Y z=$SPAWN_Z | Ackermann drive profile=$DRIVE_PROFILE"
 echo "[NOTE] Restart Gazebo between stages, otherwise prior robot(s) remain in world."
 ros2 run gazebo_ros spawn_entity.py \
  -entity "$ENTITY" -file "$TMP/robot_stage.urdf" \

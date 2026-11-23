@@ -30,10 +30,10 @@
 `stage3_console.py` đã có tùy chọn `--reverse-speed` để chủ động đặt tốc độ lùi. Ví dụ:
 
 ```bash
-bash stage3_control_feedback.sh --deadman 15 --reverse-speed 0.25
+bash stage3_control_feedback.sh --deadman 10 --speed-step 0.10 --max-speed 0.60
 ```
 
-Chỉ dùng khi **không có** `test_stage3_reverse.sh` hoặc chương trình điều khiển khác. Lệnh `S` phát `linear.x=-0.25` (so với mặc định `-0.10`) và `W` vẫn phát `+0.25`.
+Chỉ dùng khi **không có** `test_stage3_reverse.sh` hoặc chương trình điều khiển khác. Lệnh Phiên bản console mới điều khiển theo **bước vận tốc**: mỗi lần nhấn `S` giảm 0,10 m/s, `W` tăng 0,10 m/s. Tham số cũ `--reverse-speed 0.25` hiện chỉ giới hạn tốc độ lùi tối đa ở −0,25 m/s, không đặt ngay giá trị lệnh khi nhấn `S`.
 
 ## 3. Phản hồi cần gửi
 

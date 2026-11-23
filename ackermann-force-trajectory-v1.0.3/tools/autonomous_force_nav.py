@@ -43,6 +43,11 @@ class ForceNavigator(Node):
         self.route_time=0.0
         self.warned=False
         self.get_logger().info('Map-only A* + force/steering tracker; NO LiDAR/camera. Robot MUST use v1.0.3 force plugin.')
+        self.get_logger().info(
+            f'[PLANNER CONFIG] max_grade={self.mission.max_grade:.2f}, '
+            f'extra_clearance={self.mission.route_margin:.2f}m, '
+            f'vref_limit={self.mission.max_speed:.2f}m/s, '
+            f'force_cap={self.mission.max_F:.0f}N')
 
     def on_odom(self,msg):
         self.odom=msg
@@ -114,6 +119,12 @@ class ForceNavigator(Node):
             self.finish('navigator computation error: '+str(exc));return
         if dist<self.cfg['goal_tolerance_m'] and abs(pose.v)<0.06:
             self.finish(f'GOAL REACHED, XY error {dist:.2f} m')
+            return
+        if dist>=self.cfg['goal_tolerance_m'] and F==0.0 and delta==0.0 and vref==0.0:
+            # Local planner found no safe rollout. Never force it forward
+            # blindly: report cause promptly rather than silently stalling.
+            self.finish('NO SAFE LOCAL ROLLOUT: robot/route near obstacle or grade boundary;'
+                        ' reset Gazebo and inspect A* path and terrain safety margin')
             return
         if dev>self.cfg['replan_after_deviation_m'] and now-self.route_time>5.0:
             try:

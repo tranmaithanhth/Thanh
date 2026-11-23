@@ -100,3 +100,7 @@ Nếu world chạy với RTF≈1 nhưng spawn robot làm RTF≈0, dùng [`README
 ## Vận hành cấp 3, phản hồi tọa độ và góc (không LiDAR)
 
 LiDAR ở cấp 4 khiến Gazebo ngừng tiến triển trong thử nghiệm của người dùng; vì vậy tiếp tục sử dụng **cấp 3**. Sau khi chạy world bằng `bash run_world_clean.sh`, trong Terminal mới dùng `bash start_stage3_robot.sh` để spawn đúng cấp 3 (không có LiDAR/camera); ở Terminal thứ ba chạy `bash stage3_control_feedback.sh` để điều khiển bằng bàn phím, hiển thị x/y/z, roll/pitch/yaw và ghi CSV. Hướng dẫn chi tiết: [README_STAGE3_CONTROL_VI.md](README_STAGE3_CONTROL_VI.md).
+
+## Chẩn đoán lùi chậm tại x≈2.5 m (cấp 3, không LiDAR)
+
+Giảm ma sát bánh xuống 1.0 chưa khắc phục việc lùi yếu. Để phân biệt vấn đề xuất hiện tại chân dốc hay ở bộ truyền động ngược chiều, xem [`README_REVERSE_DIAG_VI.md`](README_REVERSE_DIAG_VI.md): khởi động world sạch → `bash spawn_robot_stage.sh 3` → `bash test_stage3_reverse.sh` (không chạy đồng thời console điều khiển). Script thử lần lượt -0.10, -0.25 và +0.25 m/s, in quãng đường thực, giám sát odometry và phát lệnh dừng khi kết thúc. Với console thủ công có thể đổi tốc độ lùi: `bash stage3_control_feedback.sh --deadman 15 --reverse-speed 0.25`.

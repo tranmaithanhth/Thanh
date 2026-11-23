@@ -205,3 +205,34 @@ Thử ở đường bằng `F=40–60 N` trước để xác nhận tiến/lùi 
 Kiểm tra `/ackermann_vehicle/force_state`: 10 phần tử đầu là `[F_cmd, steer_ref, steer_actual, omega_RL, omega_RR, body_v, omega_FL, omega_FR, tau_each_rear, tau_each_front]`. Để đánh giá leo dốc cần quan sát **tọa độ X tăng thực tế theo thời gian**, không suy ra thành công từ `body_v` tức thời. Nếu vẫn kẹt dù bánh không quay trượt, kiểm tra va chạm gầm và khoảng sáng bánh bằng `View → Collisions` trong Gazebo. Đừng nâng 300 N thành 500 N khi chưa xác định nguồn cản.
 
 **Kiểm thử có giới hạn:** kiểm thử Python chỉ kiểm tra cấu trúc và mô hình dự báo; **chưa xác nhận** trong Gazebo thật với lốp–đường. Nếu `bash setup_v103.sh` báo lỗi biên dịch, lấy cả phần `error:` của C++ và CMake để sửa tiếp.
+
+## 11. Sửa lỗi autonav chọn lực âm và mắc kẹt ở x≈1,86 m (23/11/2026)
+
+**Log gốc:** A* tìm 5 waypoints `(-0.4,-2)→(4.5,3.8)→(13.2,5.9)→(16,2)→(16,0.6)`. Robot đã chạy tới `P≈(1.86,-0.26)`, `yaw≈63.5°`, rồi dừng với `v≈0.02–0.16 m/s` mặc dù `vref=0.75`. Bộ dự báo thường chọn `F=-4..+30 N` thay vì tiến, sau 12 giây báo `STALL`.
+
+**Hai lỗi thuật toán đã được phát hiện và sửa trong `mission.json` + `tools/planner_core.py`:**
+
+1. Ngưỡng độ dốc toàn cục `max_terrain_grade=0.50` thấp hơn gradient thực của heightmap tại `x≈4.5,y≈-2.1` (`≈0.510`). Do đó hành lang đi dưới các vật cản bị A* loại, dù xe đã được thử chạy lên dốc bằng lực thủ công. Đã đặt `max_terrain_grade=0.55` (**chỉ lập kế hoạch, không sửa vật lý terrain**). Đồng thời thêm `route_clearance_margin_m=0.35` ngoài bán kính vùng cấm đã inflation 1,20 m; cả A* và quá trình rút gọn đường đều phải giữ khoảng cách này. Thử nghiệm A* độc lập với cấu hình mới tìm đường gần như đi thẳng theo X ở phía dưới các vật cản, thay vì tuyến cũ áp sát vùng cấm với dư khoảng 3 mm.
+2. Bộ chọn lực cũ chỉ xét `F0±30 N`, có thể chọn lực âm khi vận tốc gần 0 dù lệnh vận tốc tham chiếu vẫn dương. Hàm thưởng `-0.8*pred.v` khuyến khích chạy nhanh quá mức, trong khi dự báo `step()` lại chặn tốc độ ngay ở `0.75 m/s`, che mất hiện tượng robot thực đạt `1.05 m/s`. Đã sửa: mẫu lực rộng hơn, có ràng buộc `min_progress_force_N=15` khi đang đứng chậm và cần tiến; chấm điểm theo sai số tốc độ và phạt vượt tốc; tích phân tốc độ vật lý đến `physical_max_speed_m_s=1.45`. **Mọi ứng viên vẫn phải qua ràng buộc an toàn** (va chạm/độ dốc). Nếu không có ứng viên an toàn, bộ điều khiển trả về lực 0 chứ không ép xe tiến.
+
+**Kiểm thử thuật toán** (mô hình dự báo rút gọn, chưa phải Gazebo): với tuyến gần `(-0.4,-2)→(11.5,-2.15)→(16,0.6)`, vòng lặp mô phỏng điều khiển mới có thể đi tới vùng đích mà không bị kẹt gần `x=1.86`. Dự báo này không chứng minh chắc chắn xe chạy thành công trong Gazebo, vì Gazebo có động lực học tiếp xúc/trượt.
+
+**Cập nhật và chạy lại từ đầu** (không cần build lại plugin C++, vì lần này chỉ sửa Python và JSON):
+
+```bash
+cd ~/ackermann_humble_ws/Thanh
+git pull --ff-only origin main
+cd ackermann-force-trajectory-v1.0.3
+python3 -m unittest discover -s tests -v
+# Đóng hết world và các controller cũ trước khi thử
+# Terminal 1:
+bash run_world_v103.sh
+# Terminal 2:
+bash spawn_force_v103.sh
+# Terminal 3: chạy kiểm tra trước:
+bash auto_drive_v103.sh --dry-run
+# Ctrl+C sau khi đọc dòng A*; sau đó chạy thực:
+bash auto_drive_v103.sh
+```
+
+Khi mở auto mới, tuyến A* **không nên** còn bắt đầu bằng `(-0.4,-2)→(4.5,3.8)`. Log dự kiến sẽ có đoạn dài đi gần `y=-2` và rẽ tới đích sau khi qua các vật cản đầu tiên. Nếu vẫn còn 5 waypoint tương tự cũ, phải kiểm tra `git pull` và file `mission.json` đang dùng. Không chạy manual cùng auto; nếu xe đi sai thì Ctrl+C, nhưng lực về 0 không phải phanh giữ trên dốc.

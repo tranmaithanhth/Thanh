@@ -39,7 +39,7 @@
   ],
   "global_grid_resolution_m": 0.35,
   "robot_inflation_radius_m": 1.2,
-  "max_terrain_grade": 0.5,
+  "max_terrain_grade": 0.55,
   "max_cross_grade": 0.38,
   "height_shift_gazebo_m": 0.06299934504640783,
   "vehicle_mass_kg": 20,
@@ -61,5 +61,10 @@
   "stuck_timeout_s": 12,
   "drive_mode": "all",
   "hill_start_force_N": 175,
-  "hill_start_min_grade": 0.16
+  "hill_start_min_grade": 0.16,
+  "route_clearance_margin_m": 0.35,
+  "physical_max_speed_m_s": 1.45,
+  "min_progress_force_N": 15,
+  "speed_tracking_cost_weight": 4,
+  "overspeed_cost_weight": 14
 }

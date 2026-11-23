@@ -83,7 +83,7 @@ class Stage3Console(Node):
             print('[MODE] Monitor-only: no speed commands will be sent.', flush=True)
         else:
             print(f'[KEYS] w: forward +0.25 | s: reverse -{args.reverse_speed:.2f} | a: turn left | d: turn right', flush=True)
-            print('       c: straighten | x/SPACE: stop | q: stop and exit', flush=True)
+            print('       w/s also reset steering to straight | c: straighten | x/SPACE: stop | q: exit', flush=True)
             print(f'[SAFETY] No LiDAR: automatic stop after {args.deadman:.1f} s without a key; '
                   f'zero command if odom is stale for {args.stale:.1f} s.', flush=True)
 
@@ -125,8 +125,11 @@ class Stage3Console(Node):
         self.last_key_at = time.monotonic()
         if ch == 'w':
             self.commanded_speed = 0.25
+            # Treat W/S as a fresh straight-drive request, not a latched turn.
+            self.commanded_yaw_rate = 0.0
         elif ch == 's':
             self.commanded_speed = -self.args.reverse_speed
+            self.commanded_yaw_rate = 0.0
         elif ch == 'a':
             self.commanded_yaw_rate = 0.25
         elif ch == 'd':

@@ -60,6 +60,10 @@ class Mission:
         self.L = float(config['wheelbase_m'])
         self.Rw = float(config['wheel_radius_m'])
         self.max_F = float(config['max_drive_force_N'])
+        self.hill_start_force = float(config.get('hill_start_force_N', 0.0))
+        self.hill_start_min_grade = float(config.get('hill_start_min_grade', 0.16))
+        if not (0.0 <= self.hill_start_force <= self.max_F):
+            raise ValueError('hill_start_force_N must lie between 0 and max_drive_force_N')
         self.max_delta = float(config['max_steer_rad'])
         self.mass = float(config['vehicle_mass_kg'])
         self.eq_mass = self.mass + float(config['wheel_rotational_inertia_total_kgm2'])/self.Rw**2
@@ -207,6 +211,14 @@ class Mission:
         a=clamp(1.4*(vref-pose.v),-1.6,1.6)
         force=clamp(self.eq_mass*a+self.c_roll*pose.v+self.mass*9.81*grade,
                     -self.max_F,self.max_F)
+        # Optional hill-start assistance: the current robot is force-driven.
+        # Extra torque must overcome static resistance when starting uphill.
+        # This is a commanded motor force, NOT a guarantee of available traction.
+        # AWD is preferable: rear-only could spin tires instead of climbing.
+        if (self.hill_start_force > 0.0 and grade >= self.hill_start_min_grade
+                and 0.0 <= pose.v < 0.15 and vref > 0.20
+                and dist > self.goal_tolerance):
+            force = max(force, self.hill_start_force)
         return force,delta,tgt,dist,dev,vref
 
     def step(self,pose,F,delta,dt):

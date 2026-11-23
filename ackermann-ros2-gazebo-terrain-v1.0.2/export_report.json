@@ -1,0 +1,29 @@
+{
+  "version": "1.0.2",
+  "gridPixels": 257,
+  "worldBounds": [
+    -20.0,
+    20.0,
+    -20.0,
+    20.0
+  ],
+  "worldOrigin": [
+    0,
+    0,
+    0
+  ],
+  "heightmapSize": [
+    40.0,
+    40.0,
+    1.175992921076
+  ],
+  "matlabToGazeboZShift": 0.06299934504640783,
+  "imageFlipY": true,
+  "imageQuantizationMaxErrorM": 0.0023057886009360123,
+  "obstacleCount": 4,
+  "goal": [
+    16.0,
+    0.6
+  ],
+  "explanation": "Gazebo Z = MATLAB terrain3d_height(x,y) + matlabToGazeboZShift"
+}

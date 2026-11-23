@@ -142,3 +142,9 @@ python3 -m unittest discover -s tests -v
 ```
 
 Lệnh kiểm thử Python đối chiếu tổng khối lượng URDF giả lập, giá trị lực cực đại, các đoạn đường tránh vật cản và bộ tracker trên mô hình dự báo rút gọn. Đây **không thay thế** kiểm thử C++ plugin và tương tác lốp–đường trên Gazebo thật. Kiểm tra thêm khi Gazebo chạy: `ros2 topic echo /ackermann_vehicle/force_state` và so sánh vận tốc/chiều quay hai bánh sau với lực âm/dương để phát hiện hướng trục sai trước khi tự hành.
+
+## 8. Khắc phục lỗi `AMENT_TRACE_SETUP_FILES: unbound variable`
+
+Nếu chạy `bash spawn_force_v103.sh` báo `/opt/ros/humble/setup.bash: line 8: AMENT_TRACE_SETUP_FILES: unbound variable`, nguyên nhân là shell con của script bật `set -u` trước khi `source` ROS 2. Đã sửa trong `spawn_force_v103.sh`, `manual_drive_v103.sh`, `auto_drive_v103.sh`: chỉ bật `set -u` sau khi nạp `/opt/ros/humble/setup.bash` và `$ACKERMANN_WS/install/setup.bash`.
+
+Cập nhật `cd ~/ackermann_humble_ws/Thanh && git pull --ff-only origin main`, rồi `cd ackermann-force-trajectory-v1.0.3 && bash spawn_force_v103.sh` (cần Gazebo đang chạy bằng `run_world_v103.sh`). Nếu đã cài và build plugin thành công, **không phải build lại C++** cho sửa lỗi shell này. Kiểm tra cú pháp: `bash -n spawn_force_v103.sh manual_drive_v103.sh auto_drive_v103.sh`.

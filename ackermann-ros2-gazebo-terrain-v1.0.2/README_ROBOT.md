@@ -18,7 +18,7 @@ Wait until the robot has settled on the terrain. Then in the same or another ter
 bash drive_robot_on_terrain.sh
 ```
 
-Spawn pose is `(x=0,y=-2,z=0.30,yaw=0)` to choose a straight +X corridor that avoids the four cylindrical obstacles. The auto-demo publishes `geometry_msgs/Twist` to `/ackermann_vehicle/cmd_vel` and uses `/ackermann_vehicle/odom` to stop after about 15 m. Its 0.45 m/s maximum speed is deliberately low. The world terrain ramps along X, so this test goes uphill and downhill. **It is not DWA/TEB** and does not try to reach the green goal marker `(16,0.6)`.
+Spawn pose is `(x=0,y=-2,z=0.10,yaw=0)` to choose a straight +X corridor that avoids the four cylindrical obstacles. The auto-demo publishes `geometry_msgs/Twist` to `/ackermann_vehicle/cmd_vel` and uses `/ackermann_vehicle/odom` to stop after about 15 m. Its 0.45 m/s maximum speed is deliberately low. The world terrain ramps along X, so this test goes uphill and downhill. **It is not DWA/TEB** and does not try to reach the green goal marker `(16,0.6)`.
 
 For manual testing (after the spawn):
 
@@ -38,3 +38,4 @@ ros2 topic echo /ackermann_vehicle/odom --once
 ```
 
 If a plugin is missing, capture the Gazebo terminal lines mentioning `libgazebo_ros_ackermann_drive.so`. The setup scripts use a clean ROS 2 Humble shell to avoid ROS Noetic contamination. This is a convenience demo that still requires testing on the user's actual Gazebo and robot package.
+**Nếu robot trông như đang lơ lửng:** nhìn góc dưới trái Gazebo. Khi có nút tam giác `▶ Play` và **Real Time Factor = 0**, mô phỏng đang Pause: nhấn Play để bật trọng lực và tiếp xúc. Spawn hiện đặt `z=0.10` m (base_footprint) để bánh gần mặt đất ở `(0,-2)`; có thể đổi bằng `ACKERMANN_SPAWN_Z=0.15 bash spawn_robot_on_terrain.sh` trước khi spawn. Robot đã spawn trước đó sẽ không tự đổi cao độ: nếu muốn thả lại, phải xóa entity cũ hoặc khởi động lại world và spawn mới.

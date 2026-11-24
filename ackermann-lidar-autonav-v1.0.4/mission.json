@@ -99,5 +99,10 @@
   "lidar_replan_interval_s": 1.8,
   "lidar_mount_x_m": 0.2,
   "lidar_mount_z_m": 0.33,
-  "lidar_ground_tolerance_m": 0.12
+  "lidar_ground_tolerance_m": 0.12,
+  "lidar_self_x_back_m": -0.64,
+  "lidar_self_x_front_m": 0.67,
+  "lidar_self_half_width_m": 0.43,
+  "lidar_ground_raycast_tolerance_m": 0.2,
+  "lidar_ground_raycast_height_gate_m": 0.25
 }

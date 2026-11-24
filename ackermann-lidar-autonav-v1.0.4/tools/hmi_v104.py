@@ -20,11 +20,12 @@ from nav_msgs.msg import Odometry, Path as RosPath
 from sensor_msgs.msg import LaserScan
 from std_msgs.msg import Float64MultiArray
 
-from PyQt5.QtCore import QProcess, QTimer, Qt
+from PyQt5.QtCore import QEvent, QProcess, QTimer, Qt
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QGridLayout, QGroupBox, QLabel, QPushButton, QDoubleSpinBox,
     QPlainTextEdit, QFileDialog, QMessageBox, QTabWidget, QSplitter,
+    QSlider, QScrollArea,
 )
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as Canvas
@@ -35,6 +36,7 @@ from hmi_data import (
     export_csv, load_matlab_csv, compare_rmse, export_comparison_csv,
     distance_to_path,
 )
+from hmi_manual_control import ManualDrive
 from lidar_obstacles import LidarObstacleLayer
 from planner_core import terrain
 
@@ -119,6 +121,10 @@ class AckermannHMI(QMainWindow):
         self.last_lidar_points=[]
         self.recording=True
         self.mode='OBSERVE'
+        self.pad=ManualDrive(float(self.cfg['max_drive_force_N']),
+                             math.degrees(float(self.cfg['max_steer_rad'])))
+        self.pad_buttons={}
+        self.keyboard_held={}
         self.process=None
         self.stop_pub=None
         self.stop_until=0.0
@@ -130,6 +136,7 @@ class AckermannHMI(QMainWindow):
         self.resize(1400,900)
         self._build()
         self._style()
+        QApplication.instance().installEventFilter(self)
         self.spin_timer=QTimer(self)
         self.spin_timer.timeout.connect(self._spin_ros)
         self.spin_timer.start(30)
@@ -166,8 +173,7 @@ class AckermannHMI(QMainWindow):
 
         top=QSplitter(Qt.Horizontal)
         control=QGroupBox('Điều khiển')
-        control.setMinimumWidth(300)
-        control.setMaximumWidth(410)
+        control.setMinimumWidth(345)
         cl=QVBoxLayout(control)
         row1=QHBoxLayout()
         self.btn_manual=QPushButton('Điều khiển thủ công')
@@ -186,7 +192,56 @@ class AckermannHMI(QMainWindow):
         row2.addWidget(self.btn_observe);row2.addWidget(self.btn_stop)
         cl.addLayout(row2)
 
-        form=QGridLayout()
+        pad_box=QGroupBox('Lái nhanh — nhấn GIỮ để chạy, nhả để về 0')
+        pad=QGridLayout(pad_box)
+        buttons=[
+            ('forward','▲ TIẾN  W / ↑',0,1),
+            ('left','◀ TRÁI  A / ←',1,0),
+            ('reverse','▼ LÙI  S / ↓',1,1),
+            ('right','PHẢI ▶  D / →',1,2),
+        ]
+        for action,title,r,c in buttons:
+            b=QPushButton(title)
+            b.setObjectName('driveButton')
+            b.setMinimumHeight(46)
+            b.setAutoRepeat(False)
+            b.pressed.connect(lambda direction=action:self._pad_press(direction))
+            b.released.connect(lambda direction=action:self._pad_release(direction))
+            pad.addWidget(b,r,c)
+            self.pad_buttons[action]=b
+        self.btn_zero=QPushButton('■ VỀ 0 (SPACE) — vẫn ở Manual')
+        self.btn_zero.setObjectName('zeroButton')
+        self.btn_zero.clicked.connect(self._zero_command)
+        pad.addWidget(self.btn_zero,2,0,1,3)
+        cl.addWidget(pad_box)
+
+        force_bar=QHBoxLayout()
+        self.force_limit_label=QLabel('Độ mạnh: 80 N')
+        self.force_slider=QSlider(Qt.Horizontal)
+        self.force_slider.setRange(10,round(float(self.cfg['max_drive_force_N'])))
+        self.force_slider.setSingleStep(5)
+        self.force_slider.setValue(round(self.pad.force_step_N))
+        self.force_slider.valueChanged.connect(self._change_sensitivity)
+        force_bar.addWidget(self.force_limit_label)
+        force_bar.addWidget(self.force_slider,stretch=1)
+        cl.addLayout(force_bar)
+        steer_bar=QHBoxLayout()
+        self.steer_limit_label=QLabel('Độ lái: 15°')
+        self.steer_slider=QSlider(Qt.Horizontal)
+        self.steer_slider.setRange(3,round(math.degrees(float(self.cfg['max_steer_rad']))))
+        self.steer_slider.setSingleStep(1)
+        self.steer_slider.setValue(round(self.pad.steer_step_deg))
+        self.steer_slider.valueChanged.connect(self._change_sensitivity)
+        steer_bar.addWidget(self.steer_limit_label)
+        steer_bar.addWidget(self.steer_slider,stretch=1)
+        cl.addLayout(steer_bar)
+        self.drive_feedback=QLabel('F=0 N  |  δ=0°')
+        self.drive_feedback.setObjectName('commandFeedback')
+        self.drive_feedback.setWordWrap(True)
+        cl.addWidget(self.drive_feedback)
+
+        exact_box=QGroupBox('Lệnh số chính xác — dùng cho thí nghiệm')
+        form=QGridLayout(exact_box)
         label=QLabel('Lực F yêu cầu (N)')
         form.addWidget(label,0,0)
         self.force_edit=QDoubleSpinBox()
@@ -204,10 +259,15 @@ class AckermannHMI(QMainWindow):
         self.steer_edit.setSingleStep(2.0)
         self.steer_edit.setSuffix(' °')
         form.addWidget(self.steer_edit,1,1)
-        cl.addLayout(form)
+        self.btn_apply_exact=QPushButton('▶ GIỮ LỆNH SỐ (đến khi VỀ 0)')
+        self.btn_apply_exact.clicked.connect(self._apply_exact)
+        form.addWidget(self.btn_apply_exact,2,0,1,2)
+        cl.addWidget(exact_box)
         self.goal_note=QLabel(
             'Đích: (%.1f, %.1f) m  •  Điều khiển: [F, δ]\n'
-            'DỪNG LỆNH chỉ trả lực về 0, không phải phanh đỗ.'
+            'W/A/S/D hoặc phím mũi tên: nhấn giữ để chạy, nhả để về 0.\n'
+            'SPACE: VỀ 0 (không thoát Manual). DỪNG LỆNH: thoát điều khiển.\n'
+            'F=0 không phải phanh đỗ trên dốc.'
             % tuple(self.cfg['goal_xy']))
         self.goal_note.setWordWrap(True)
         cl.addWidget(self.goal_note)
@@ -234,7 +294,13 @@ class AckermannHMI(QMainWindow):
         row4.addWidget(self.new_session);row4.addWidget(self.pause_record)
         cl.addLayout(row4)
         cl.addStretch()
-        top.addWidget(control)
+        control_scroll=QScrollArea()
+        control_scroll.setWidgetResizable(True)
+        control_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        control_scroll.setMinimumWidth(365)
+        control_scroll.setMaximumWidth(475)
+        control_scroll.setWidget(control)
+        top.addWidget(control_scroll)
 
         state=QGroupBox('Trạng thái phản hồi từ Gazebo')
         grid=QGridLayout(state)
@@ -265,7 +331,7 @@ class AckermannHMI(QMainWindow):
         grid.setColumnStretch(0,1)
         grid.setColumnStretch(2,1)
         top.addWidget(state)
-        top.setSizes([360,980])
+        top.setSizes([430,970])
         root.addWidget(top,stretch=0)
 
         self.tabs=QTabWidget()
@@ -306,6 +372,13 @@ class AckermannHMI(QMainWindow):
             QPushButton:hover {background:#dde9f5;}
             QPushButton:disabled {color:#a2aebe; background:#f1f3f6;}
             QPushButton#autoButton {background:#dceafa; color:#12385f;}
+            QPushButton#driveButton {background:#dff0ff; color:#164b84;
+                                    font-size:13px;}
+            QPushButton#driveButton:pressed {background:#75b8f4; color:#071e40;}
+            QPushButton#zeroButton {background:#fff0d2; color:#87440e;}
+            QLabel#commandFeedback {background:#e3f4ee; color:#124d3a;
+                                    padding:8px; border-radius:6px;
+                                    font-size:13px; font-weight:700;}
             QPushButton#stopButton {background:#fbe5e5; color:#a32424;
                                    border-color:#e9b8b8;}
             QDoubleSpinBox {padding:6px; border:1px solid #bccbdb;

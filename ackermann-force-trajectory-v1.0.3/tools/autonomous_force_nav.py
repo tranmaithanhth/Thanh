@@ -48,6 +48,10 @@ class ForceNavigator(Node):
             f'extra_clearance={self.mission.route_margin:.2f}m, '
             f'vref_limit={self.mission.max_speed:.2f}m/s, '
             f'force_cap={self.mission.max_F:.0f}N')
+        if self.dry_run:
+            self.get_logger().info(
+                '[DRY RUN] Planner preview only: NO force_steer commands are published; '
+                'the robot is NOT expected to move; STALL detection disabled.')
 
     def on_odom(self,msg):
         self.odom=msg
@@ -135,11 +139,15 @@ class ForceNavigator(Node):
                 self.finish('Off-route, A* failed: '+str(exc));return
         if not self.mission.safe_motion(pose.x,pose.y,pose.yaw):
             self.finish('Current pose unsafe for obstacle/grade/bounds');return
-        if self.last_progress is None or math.hypot(pose.x-self.last_progress[1],pose.y-self.last_progress[2])>=0.2:
-            self.last_progress=(now,pose.x,pose.y)
-        elif now-self.last_progress[0]>self.cfg['stuck_timeout_s'] and dist>self.cfg['goal_tolerance_m']:
-            self.finish(f'STALL: <0.20m progress over {self.cfg["stuck_timeout_s"]}s; inspect wheel joints, PID and traction')
-            return
+        # Only the live controller can be judged by physical progress. In
+        # --dry-run we deliberately do NOT publish force/steer commands, so
+        # stationary odometry is an expected result, never a drivetrain STALL.
+        if not self.dry_run:
+            if self.last_progress is None or math.hypot(pose.x-self.last_progress[1],pose.y-self.last_progress[2])>=0.2:
+                self.last_progress=(now,pose.x,pose.y)
+            elif now-self.last_progress[0]>self.cfg['stuck_timeout_s'] and dist>self.cfg['goal_tolerance_m']:
+                self.finish(f'STALL: <0.20m progress over {self.cfg["stuck_timeout_s"]}s; inspect wheel joints, force output and traction')
+                return
         self.publish(F,delta)
         self.publish_route()  # published at 10 Hz; allows RViz to join without transient QoS
         if now-self.last_report>=1.0/self.cfg['logging_hz']:

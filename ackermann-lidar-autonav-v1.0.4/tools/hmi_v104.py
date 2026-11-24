@@ -499,6 +499,293 @@ class AckermannHMI(QMainWindow):
         self.map_panel.canvas.mpl_connect('button_press_event',
                                            self._scene_map_click)
 
+    def _scene_map_click(self,event):
+        if event.inaxes is not self.map_panel.axes or event.button!=1:
+            return
+        if event.xdata is None or event.ydata is None:return
+        try:
+            x,y=validate_xy(event.xdata,event.ydata,margin=0.1)
+        except ValueError:
+            self.statusBar().showMessage('Chọn vị trí bên trong vùng ±18 m.',4500)
+            return
+        if self.scene_pick_target.currentIndex()==0:
+            self.obstacle_x.setValue(x);self.obstacle_y.setValue(y)
+            chosen='Vật cản'
+        else:
+            self.robot_x.setValue(x);self.robot_y.setValue(y)
+            chosen='Robot'
+        self.scene_pick_note.setText(f'{chosen}: X={x:.2f}, Y={y:.2f} m')
+        self._log(
+            f'Đã chọn điểm {chosen} từ bản đồ: ({x:.2f},{y:.2f}). '
+            'Mở tab Quản lý mô phỏng và nhấn nút Thêm để tạo.')
+
+    def _scene_is_fresh(self):
+        return time.monotonic()-self.node.scene_at<1.5
+
+    def _scene_busy(self):
+        return (self.scene_action is not None or bool(self.scene_delete_queue)
+                or (self.robot_spawn_process is not None and
+                    self.robot_spawn_process.state()!=QProcess.NotRunning))
+
+    def _scene_tick(self):
+        if self._closing:return
+        if self.scene_action is not None:
+            future,label,callback,deadline=self.scene_action
+            if future.done():
+                self.scene_action=None
+                try:
+                    response=future.result()
+                    if not response.success:
+                        raise RuntimeError(response.status_message)
+                    self._log('[GAZEBO] '+label+': OK — '+response.status_message)
+                    if callback is not None:callback()
+                except Exception as exc:
+                    self.scene_delete_queue.clear()
+                    self._log('[GAZEBO] '+label+': LỖI — '+str(exc))
+                    QMessageBox.warning(self,'Lỗi thay đổi Gazebo',
+                                        label+'\n'+str(exc))
+            elif time.monotonic()>deadline:
+                # Do not dispatch a second operation if the first may still be
+                # executing on Gazebo. Keep it pending until a reply arrives.
+                self._log('[GAZEBO] '+label+
+                          ': quá 12s chưa phản hồi, không gửi lệnh khác.')
+                self.scene_action=(future,label,callback,time.monotonic()+12.)
+        fresh=self._scene_is_fresh()
+        models=self.node.scene_models if fresh else {}
+        names=tuple(removable_models(models))
+        if names!=self._scene_list_names:
+            selected=(self.scene_list.currentItem().text().split('  (')[0]
+                      if self.scene_list.currentItem() else None)
+            self.scene_list.clear()
+            for name in names:
+                x,y=models[name]
+                self.scene_list.addItem(f'{name}  ({x:+.2f}, {y:+.2f})')
+            for i in range(self.scene_list.count()):
+                if self.scene_list.item(i).text().split('  (')[0]==selected:
+                    self.scene_list.setCurrentRow(i)
+                    break
+            self._scene_list_names=names
+        robot_exists=(ROBOT_NAME in models)
+        self.scene_robot_state.setText(
+            ('Đã có robot tại X=%+.2f, Y=%+.2f' % models[ROBOT_NAME])
+            if robot_exists else (
+                'Chưa có robot — có thể chọn X/Y/yaw và spawn.'
+                if fresh else 'Gazebo không gửi /gazebo/model_states mới.'))
+        busy=self._scene_busy()
+        no_ctrl=(self.mode=='OBSERVE' and self.node.manual_publisher is None
+                 and self.node.count_publishers(CMD)==0
+                 and self.stop_pub is None)
+        robot_edit=bool(fresh and no_ctrl and not busy)
+        self.btn_spawn_robot.setEnabled(robot_edit and not robot_exists)
+        self.btn_delete_robot.setEnabled(robot_edit and robot_exists)
+        self.btn_add_obstacle.setEnabled(fresh and not busy)
+        self.btn_delete_selected.setEnabled(
+            fresh and not busy and self.scene_list.currentItem() is not None)
+        self.btn_delete_all.setEnabled(fresh and not busy and bool(names))
+
+    def _scene_submit(self,client,request,label,callback=None):
+        if self._scene_busy():
+            QMessageBox.information(self,'Gazebo đang xử lý',
+                                    'Chờ thao tác thêm/xóa trước kết thúc.')
+            return False
+        if not self._scene_is_fresh():
+            QMessageBox.warning(self,'Gazebo',
+                'Không nhận được /gazebo/model_states mới. Hãy mở world v1.0.4.')
+            return False
+        if not client.service_is_ready():
+            QMessageBox.warning(self,'Thiếu dịch vụ Gazebo',
+                'Chưa có /spawn_entity hoặc /delete_entity. '
+                'Kiểm tra gazebo_ros_factory và terminal Gazebo.')
+            return False
+        self.scene_action=(client.call_async(request),label,callback,
+                           time.monotonic()+12.)
+        self._log('[GAZEBO] Đã gửi: '+label)
+        return True
+
+    def _scene_add_obstacle(self):
+        if self._scene_busy():return
+        try:
+            x,y=validate_xy(self.obstacle_x.value(),self.obstacle_y.value(),
+                            margin=self.obstacle_size.value()+0.15)
+            shape=self.obstacle_shape.currentData()
+            size,height=validate_obstacle(
+                shape,self.obstacle_size.value(),self.obstacle_height.value())
+            if conflicts_with_robot(x,y,size,
+                                     self.node.scene_models.get(ROBOT_NAME)):
+                raise ValueError(
+                    'Vật cản quá gần robot! Hãy đặt ngoài thân xe và vùng đệm.')
+            name=unique_obstacle_name(self.node.scene_models.keys())
+            xml=obstacle_sdf(name,shape,size,height)
+            z=ground_center_height(x,y,height,terrain,
+                                     self.cfg['height_shift_gazebo_m'])
+        except ValueError as exc:
+            QMessageBox.warning(self,'Vị trí vật cản không hợp lệ',str(exc))
+            return
+        req=SpawnEntity.Request()
+        req.name=name
+        req.xml=xml
+        req.robot_namespace=''
+        req.reference_frame='world'
+        req.initial_pose.position.x=x
+        req.initial_pose.position.y=y
+        req.initial_pose.position.z=z
+        req.initial_pose.orientation.w=1.0
+        self._scene_submit(self.node.spawn_client,req,
+                           f'Thêm {name} ({shape}) X={x:.2f},Y={y:.2f}')
+
+    def _scene_delete_one(self,name,callback=None):
+        if not name or not name in removable_models(self.node.scene_models):
+            QMessageBox.warning(self,'Lựa chọn không hợp lệ',
+                                'Chỉ có thể xóa các vật cản trong danh sách Gazebo.')
+            return False
+        req=DeleteEntity.Request()
+        req.name=name
+        return self._scene_submit(self.node.delete_client,req,
+                                  'Xóa vật cản '+name,callback)
+
+    def _scene_delete_selected(self):
+        current=self.scene_list.currentItem()
+        if current is None:return
+        name=current.text().split('  (')[0]
+        if QMessageBox.question(
+                self,'Xác nhận xóa vật cản',f'Xóa {name} khỏi Gazebo?')!=(
+                    QMessageBox.Yes):
+            return
+        self._scene_delete_one(name)
+
+    def _scene_delete_all(self):
+        if self._scene_busy():return
+        names=removable_models(self.node.scene_models)
+        if not names:return
+        if QMessageBox.question(
+                self,'Xác nhận xóa tất cả',
+                f'Xóa toàn bộ {len(names)} vật cản khỏi Gazebo? '
+                'Không xóa địa hình, tường hay robot.')!=QMessageBox.Yes:
+            return
+        self.scene_delete_queue=list(names)
+        self._scene_delete_next()
+
+    def _scene_delete_next(self):
+        if not self.scene_delete_queue:return
+        name=self.scene_delete_queue.pop(0)
+        # _scene_submit sees the next queued items as pending. Temporarily
+        # clear the queue; the callback restores it on success.
+        tail=self.scene_delete_queue
+        self.scene_delete_queue=[]
+        ok=self._scene_delete_one(
+            name,callback=lambda tail=tail:self._scene_continue_queue(tail))
+        if not ok:self.scene_delete_queue.clear()
+
+    def _scene_continue_queue(self,tail):
+        self.scene_delete_queue=list(tail)
+        if self.scene_delete_queue:self._scene_delete_next()
+        else:self._log('[GAZEBO] Đã xóa xong các vật cản đã chọn.')
+
+    def _scene_robot_edit_guard(self):
+        if not self._scene_is_fresh():
+            QMessageBox.warning(self,'Gazebo',
+                                'Chưa nhận /gazebo/model_states mới.')
+            return False
+        if self._scene_busy():
+            QMessageBox.warning(self,'Gazebo',
+                                'Đang có thao tác khác, chưa thể thêm/xóa robot.')
+            return False
+        if (self.mode!='OBSERVE' or self.node.manual_publisher is not None
+            or self.stop_pub is not None
+            or (self.process is not None and
+                self.process.state()!=QProcess.NotRunning)
+            or self.node.count_publishers(CMD)>0):
+            QMessageBox.warning(
+                self,'Phải dừng robot trước',
+                'Bấm DỪNG LỆNH, tắt controller ngoài HMI (nếu có), '
+                'đợi 1 giây rồi thử lại. Không xóa/spawn robot đang tự hành.')
+            return False
+        return True
+
+    def _scene_delete_robot(self):
+        if not self._scene_robot_edit_guard():return
+        if ROBOT_NAME not in self.node.scene_models:
+            QMessageBox.information(self,'Robot','Robot không tồn tại trong Gazebo.')
+            return
+        if QMessageBox.question(
+                self,'Xác nhận xóa robot',
+                'Xóa robot Ackermann khỏi Gazebo?\n'
+                'Quỹ đạo ghi trước đó sẽ được đặt lại.')!=QMessageBox.Yes:
+            return
+        req=DeleteEntity.Request()
+        req.name=ROBOT_NAME
+        self._scene_submit(self.node.delete_client,req,'Xóa robot '+ROBOT_NAME,
+                           self._scene_robot_removed)
+
+    def _scene_robot_removed(self):
+        self.node.odom=None
+        self.node.odom_at=0.
+        self.node.state=None
+        self.node.route=None
+        self.node.nearby=[]
+        self.node.nearby_at=0.
+        self.last_nearby_points=[]
+        self.node.scene_models.pop(ROBOT_NAME,None)
+        self._clear_samples()
+        self._log('Robot đã xóa; có thể chọn X/Y/yaw mới rồi Thêm robot.')
+
+    def _scene_spawn_robot(self):
+        if not self._scene_robot_edit_guard():return
+        if ROBOT_NAME in self.node.scene_models:
+            QMessageBox.information(self,'Chỉ một robot',
+                'Đã có robot. Hãy xóa robot trước khi spawn robot mới.')
+            return
+        if not self.node.spawn_client.service_is_ready():
+            QMessageBox.warning(self,'Gazebo',
+                                '/spawn_entity chưa sẵn sàng.')
+            return
+        try:
+            x,y=validate_xy(self.robot_x.value(),self.robot_y.value(),
+                            margin=0.9)
+            yaw=math.radians(self.robot_yaw.value())
+            if conflicts_with_obstacles(
+                    x,y,1.05,
+                    [(name,*xy) for name,xy in self.node.scene_models.items()]):
+                raise ValueError('Vị trí robot quá gần một vật cản đang tồn tại.')
+        except ValueError as exc:
+            QMessageBox.warning(self,'Vị trí robot không hợp lệ',str(exc))
+            return
+        self.robot_spawn_process=QProcess(self)
+        self.robot_spawn_process.setWorkingDirectory(str(ROOT))
+        self.robot_spawn_process.setProcessChannelMode(QProcess.MergedChannels)
+        env=QProcessEnvironment.systemEnvironment()
+        env.insert('ACKERMANN_SPAWN_X',str(x))
+        env.insert('ACKERMANN_SPAWN_Y',str(y))
+        env.insert('ACKERMANN_SPAWN_YAW',str(yaw))
+        self.robot_spawn_process.setProcessEnvironment(env)
+        self.robot_spawn_process.readyReadStandardOutput.connect(
+            self._scene_robot_spawn_output)
+        self.robot_spawn_process.finished.connect(self._scene_robot_spawn_finished)
+        self.robot_spawn_process.errorOccurred.connect(
+            lambda e:self._log('Lỗi tiến trình spawn robot: '+str(e)))
+        self.robot_spawn_process.start(
+            '/bin/bash',[str(ROOT/'spawn_force_v104.sh')])
+        self._log(f'[GAZEBO] Yêu cầu spawn robot ở ({x:.2f},{y:.2f}), '
+                  f'yaw={math.degrees(yaw):.1f}°')
+        self._scene_tick()
+
+    def _scene_robot_spawn_output(self):
+        if self.robot_spawn_process is None:return
+        out=bytes(self.robot_spawn_process.readAllStandardOutput()).decode(
+            'utf-8','replace')
+        for line in out.splitlines():
+            if line.strip():self._log('[SPAWN] '+line.strip())
+
+    def _scene_robot_spawn_finished(self,code,status):
+        self._scene_robot_spawn_output()
+        if code==0:
+            self._log('Đã spawn robot. Kiểm tra ODOM trước khi chọn điều khiển.')
+            self._clear_samples()
+        else:
+            self._log('Spawn robot thất bại (exit=%d). Xem log [SPAWN].' % code)
+            QMessageBox.warning(self,'Spawn robot thất bại',
+                                'Hãy kiểm tra log [SPAWN] trong Nhật ký tự hành.')
+
     def _style(self):
         self.setStyleSheet("""
             QMainWindow,QWidget {background:#f7f9fc; color:#172438;}

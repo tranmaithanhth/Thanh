@@ -33,7 +33,8 @@ from matplotlib.patches import Circle, Rectangle
 
 from hmi_data import (
     FIELDS, COMPARED, numeric, quaternion_rpy, force_state_values,
-    export_csv, load_matlab_csv, compare_rmse, export_comparison_csv,
+    export_csv, load_matlab_csv, compare_rmse, comparison_warnings,
+    export_comparison_csv,
     distance_to_path,
 )
 from hmi_manual_control import ManualDrive
@@ -337,7 +338,7 @@ class AckermannHMI(QMainWindow):
         self.tabs=QTabWidget()
         self.live_panel=PlotPanel(2,2)
         self.map_panel=PlotPanel(1,1)
-        self.compare_panel=PlotPanel(3,2)
+        self.compare_panel=PlotPanel(4,2)
         self.tabs.addTab(self.live_panel,'Đồ thị thời gian thực')
         self.tabs.addTab(self.map_panel,'Quỹ đạo XY + LiDAR')
         self.tabs.addTab(self.compare_panel,'Đối chiếu MATLAB')
@@ -870,10 +871,11 @@ class AckermannHMI(QMainWindow):
         self.last_compare_wall=now
         axs=self.compare_panel.axes.flat
         for ax in axs:ax.clear()
-        keys=COMPARED[:6]
+        keys=COMPARED
         for ax,(key,title) in zip(axs,keys):
             self._plot_timeseries(ax,self.samples,key,title,
                                   other=self.reference if self.reference else None)
+        axs[-1].axis('off')
         self.compare_panel.canvas.draw_idle()
         if self.reference:
             results=compare_rmse(self.samples,self.reference,
@@ -883,9 +885,18 @@ class AckermannHMI(QMainWindow):
                 v=results[key]
                 if v['n']>0:
                     pieces.append(f"{title}: RMSE={v['rmse']:.3f} (n={v['n']})")
+            warnings=comparison_warnings(self.samples,self.reference)
+            match_text=(
+                '⚠ Chưa đồng nhất điều kiện thử nghiệm: ' + ' '.join(warnings)
+                if warnings else
+                'Kiểm tra sơ bộ: vị trí, hướng, vận tốc đầu và lệnh lực gần tương đồng; '
+                'vẫn cần đồng nhất ma sát, hệ dẫn động và điều khiển.'
+            )
             self.compare_summary.setText(
-                'MATLAB/Gazebo căn chỉnh theo t=0 (không hiệu chỉnh vị trí ban đầu).  '+
-                '  |  '.join(pieces) if pieces else 'Không có khoảng thời gian trùng khớp.')
+                ('MATLAB/Gazebo căn chỉnh theo t=0 (không tự bù vị trí).  '+
+                 '  |  '.join(pieces) if pieces else
+                 'Không có khoảng thời gian trùng khớp.')+
+                '\\n'+match_text)
         else:self.compare_summary.setText('Chưa nạp CSV MATLAB để vẽ chồng.')
 
     def _save_gazebo(self):

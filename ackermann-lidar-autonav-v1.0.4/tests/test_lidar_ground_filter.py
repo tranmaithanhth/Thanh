@@ -45,6 +45,25 @@ class TestGroundClassification(unittest.TestCase):
         self.assertEqual(layer.last_filter_stats['below_map'],1)
         self.assertEqual(layer.last_filter_stats['dynamic'],0)
 
+    def test_full_vertical_ramp_contour_is_filtered(self):
+        # Reproduce the orange column at X≈4.9 across -5<Y<4.
+        # Each independent 2D scan beam has a different bearing and range.
+        for target_y in (-5.0,-3.0,-2.0,0.0,2.0,4.0):
+            layer=self.new_layer()
+            dx=4.9-0.2
+            dy=target_y+2.0
+            d=math.hypot(dx,dy)
+            a=math.atan2(dy,dx)
+            self.assertLess(d,8.0)
+            ok=layer.update(
+                [d],a,0.1,0.15,8.0,
+                -0.4,-2.0,0.0,
+                now=100.0,
+                model_pose=(0.0,-2.0,0.05,0.0,0.0,0.0,1.0))
+            self.assertTrue(ok)
+            self.assertEqual(layer.world_points(now=100.0),[],
+                             msg='false ramp return at Y='+str(target_y))
+
     def test_forward_obstacle_above_terrain_remains_visible(self):
         layer=self.new_layer()
         # Beam returns 1.8 m to x=2.0 while the road is still low.

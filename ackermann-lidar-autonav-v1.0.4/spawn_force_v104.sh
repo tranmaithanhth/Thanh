@@ -3,7 +3,9 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BASE="$(cd "$ROOT/../ackermann-ros2-gazebo-terrain-v1.0.2" && pwd)"
+V103_ROOT="$(cd "$ROOT/../ackermann-force-trajectory-v1.0.3" && pwd)"
 WS="${ACKERMANN_WS:-$HOME/ackermann_humble_ws}"
+[[ -f "$V103_ROOT/matlab_vehicle_params.json" ]] || { echo "ERROR: MATLAB vehicle parameters missing at $V103_ROOT/matlab_vehicle_params.json" >&2; exit 1; }
 SPAWN_X="${ACKERMANN_SPAWN_X:-0.0}"
 SPAWN_Y="${ACKERMANN_SPAWN_Y:--2.0}"
 SPAWN_YAW="${ACKERMANN_SPAWN_YAW:-0.0}"
@@ -32,7 +34,7 @@ if [[ "$ROOT/../ackermann-force-trajectory-v1.0.3/ackermann_force_control/src/ac
 fi
 exec env -i HOME="$HOME" USER="${USER:-$(id -un)}" LOGNAME="${LOGNAME:-$(id -un)}" \
  PATH=/usr/local/bin:/usr/bin:/bin LANG="${LANG:-C.UTF-8}" ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}" \
- V104_ROOT="$ROOT" BASE="$BASE" ACKERMANN_WS="$WS" SPAWN_X="$SPAWN_X" SPAWN_Y="$SPAWN_Y" SPAWN_Z="$SPAWN_Z" SPAWN_YAW="$SPAWN_YAW" \
+ V104_ROOT="$ROOT" V103_ROOT="$V103_ROOT" BASE="$BASE" ACKERMANN_WS="$WS" SPAWN_X="$SPAWN_X" SPAWN_Y="$SPAWN_Y" SPAWN_Z="$SPAWN_Z" SPAWN_YAW="$SPAWN_YAW" \
  bash --noprofile --norc -c '
 set -eo pipefail
 # ROS 2 environment scripts may inspect unset variables (e.g. AMENT_TRACE_SETUP_FILES).

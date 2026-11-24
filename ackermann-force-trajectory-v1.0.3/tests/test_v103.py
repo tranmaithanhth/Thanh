@@ -112,6 +112,19 @@ class TestTerrainAndAutonomy(unittest.TestCase):
         self.assertLessEqual(F,self.m.max_F)
         self.assertLessEqual(abs(delta),self.m.max_delta)
 
+    def test_hill_start_force_tapers_smoothly(self):
+        self.m.astar((-0.4,-2))
+        yaw=math.radians(4.0)
+        f_slow=self.m.hill_start_force_floor(Pose(2.35,-1.75,yaw,0.12),0.75,13.84)
+        f_mid=self.m.hill_start_force_floor(Pose(2.35,-1.75,yaw,0.32),0.75,13.84)
+        f_fast=self.m.hill_start_force_floor(Pose(2.35,-1.75,yaw,0.46),0.75,13.84)
+        f_flat=self.m.hill_start_force_floor(Pose(0.0,-2.0,0.0,0.12),0.75,16.0)
+        self.assertAlmostEqual(f_slow,self.cfg['hill_start_force_N'],places=6)
+        self.assertGreater(f_mid,0.0)
+        self.assertLess(f_mid,f_slow)
+        self.assertEqual(f_fast,0.0)
+        self.assertEqual(f_flat,0.0)
+
     def test_recovery_config_stays_within_torque_limit(self):
         self.assertGreater(self.cfg['recovery_after_s'],0.0)
         self.assertGreater(self.cfg['recovery_initial_force_N'],0.0)
@@ -140,6 +153,15 @@ class TestTerrainAndAutonomy(unittest.TestCase):
             self.fail(f'Reduced simulated tracker failed to reach goal: {p}')
         self.assertLess(i/10,120)
 
+
+class TestHillRecoveryGuard(unittest.TestCase):
+    def test_recovery_only_for_stagnant_uphill_with_safe_rollout(self):
+        nav=(BASE/'tools/autonomous_force_nav.py').read_text(encoding='utf-8')
+        self.assertIn("if not self.dry_run and self.last_progress is not None and vref>0.25:",nav)
+        self.assertIn("max(rear_grade,front_grade)>=",nav)
+        self.assertIn("stagnant_s>=",nav)
+        self.assertIn("self.mission.rollout_safe(",nav)
+        self.assertIn("min(\n                    self.mission.max_F",nav)
 
 class TestDryRunProgressGuard(unittest.TestCase):
     def test_dry_run_skips_progress_watchdog(self):

@@ -3,7 +3,7 @@
 
 Observer mode creates NO force publisher. Manual mode owns exactly one
 Float64MultiArray [F_N, delta_rad] publisher. AUTO launches the existing
-LiDAR controller as a separate process after releasing manual ownership.
+nearby-world controller as a separate process after releasing manual ownership.
 """
 from __future__ import annotations
 
@@ -177,8 +177,8 @@ class AckermannHMI(QMainWindow):
         header.addWidget(head,stretch=1)
         self.mode_label=QLabel('OBSERVE')
         self.odom_health=QLabel('ODOM —')
-        self.scan_health=QLabel('Môi trường —')
-        for el in (self.mode_label,self.odom_health,self.scan_health):
+        self.scene_health=QLabel('Môi trường —')
+        for el in (self.mode_label,self.odom_health,self.scene_health):
             el.setObjectName('statusPill')
             header.addWidget(el)
         root.addLayout(header)
@@ -757,11 +757,11 @@ class AckermannHMI(QMainWindow):
         self._update_nearby()
         now=time.monotonic()
         good_odom=now-self.node.odom_at<1.2
-        good_scan=now-self.node.scene_at<1.3
+        good_scene=now-self.node.scene_at<1.3
         self.odom_health.setText('ODOM ●' if good_odom else 'ODOM —')
-        self.scan_health.setText('Môi trường ●' if good_scan else 'Môi trường —')
+        self.scene_health.setText('Môi trường ●' if good_scene else 'Môi trường —')
         self.odom_health.setStyleSheet('color:#176a48;' if good_odom else 'color:#a42e30;')
-        self.scan_health.setStyleSheet('color:#176a48;' if good_scan else 'color:#a42e30;')
+        self.scene_health.setStyleSheet('color:#176a48;' if good_scene else 'color:#a42e30;')
         if not good_odom:return
         row=self._make_row()
         if row is None:return

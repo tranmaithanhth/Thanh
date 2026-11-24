@@ -107,6 +107,22 @@ class TestLocalPlanners(unittest.TestCase):
         for x,y in newroute:
             self.assertTrue(m.safe_xy(x,y))
 
+    def test_log_replay_pose_1_88_minus_0_31_remains_feasible(self):
+        # Reported ROS trace: 18:29:48 => P=(1.88,-.31), yaw=-23deg,
+        # v=.30m/s, first obstacle seen at (4.1,.3), r=.75.
+        cfg=dict(self.config);cfg['local_planner']='DWA'
+        m=LocalPlanningMission(cfg)
+        m.update_dynamic([('obstacle_01',4.1,.3,.75)])
+        m.astar((.63,-.15))
+        pose=Pose(1.88,-.31,math.radians(-23.),.30)
+        m.last_delta=math.radians(-26.5)
+        candidate=m._dwa(pose,m.feedback(pose))
+        self.assertIsNotNone(
+            candidate,
+            msg='DWA rejected every predicted trajectory at reported pose')
+        self.assertGreaterEqual(candidate[4],0.0)
+        self.assertTrue(m.safe_motion(pose.x,pose.y,pose.yaw))
+
     def test_safety_fallback_stops_for_collision_at_start(self):
         m=self.mission('DWA')
         m.update_dynamic([('just_spawned',.2,-2.,.5)])

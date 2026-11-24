@@ -219,12 +219,24 @@ class Mission:
         rear,front=self.axle_grades(pose)
         return 0.5*(rear+front)
 
-    def hill_start_active(self,pose,vref,dist):
+    def hill_start_force_floor(self,pose,vref,dist):
         rear,front=self.axle_grades(pose)
-        return (self.hill_start_force>0.0 and
+        full_below=float(self.c.get('hill_start_full_force_below_m_s',0.20))
+        release=float(self.c.get('hill_start_release_speed_m_s',0.45))
+        if release<=full_below:
+            raise ValueError('hill-start release speed must exceed full-force threshold')
+        if not (self.hill_start_force>0.0 and
                 max(rear,front)>=self.hill_start_min_grade and
-                0.0<=pose.v<0.20 and vref>0.20 and
-                dist>self.goal_tolerance)
+                0.0<=pose.v<release and vref>0.20 and
+                dist>self.goal_tolerance):
+            return 0.0
+        # Smoothly release extra torque as the chassis actually accelerates:
+        # avoids switching abruptly from 175N at 0.19m/s to ~30N at 0.21m/s.
+        factor=clamp((release-pose.v)/(release-full_below),0.0,1.0)
+        return self.hill_start_force*factor
+
+    def hill_start_active(self,pose,vref,dist):
+        return self.hill_start_force_floor(pose,vref,dist)>0.0
 
     def rollout_safe(self,pose,F,delta,horizon_s=0.45):
         """Short-horizon collision/grade/route-deviation guard for boost."""
@@ -263,9 +275,10 @@ class Mission:
         # Extra torque must overcome static resistance when starting uphill.
         # This is a commanded motor force, NOT a guarantee of available traction.
         # AWD is preferable: rear-only could spin tires instead of climbing.
-        if self.hill_start_active(pose,vref,dist):
+        hill_floor=self.hill_start_force_floor(pose,vref,dist)
+        if hill_floor>0.0:
             # Front axle can be on the ramp while rear P still appears flat.
-            force=max(force,self.hill_start_force)
+            force=max(force,hill_floor)
         return force,delta,tgt,dist,dev,vref
 
     def step(self,pose,F,delta,dt):
@@ -290,10 +303,11 @@ class Mission:
                                for shift in force_shifts))
         # The old MPC could reject the hill-start torque due to its idealized
         # speed model and send 24N while the front axle was climbing.
-        if self.hill_start_active(pose,vref,dist):
-            candidate_F=[F for F in candidate_F if F>=self.hill_start_force-1e-6]
+        hill_floor=self.hill_start_force_floor(pose,vref,dist)
+        if hill_floor>0.0:
+            candidate_F=[F for F in candidate_F if F>=hill_floor-1e-6]
             if not candidate_F:
-                candidate_F=[self.hill_start_force]
+                candidate_F=[hill_floor]
         candidate_delta=sorted(set(round(clamp(steer0+shift,-self.max_delta,self.max_delta),4)
                                    for shift in (-0.18,-0.09,0.,0.09,0.18)))
         best=None

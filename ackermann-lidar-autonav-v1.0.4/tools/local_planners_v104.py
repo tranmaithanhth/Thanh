@@ -97,6 +97,11 @@ class LocalPlanningMission(DynamicMission):
         self.last_reference_v=0.
         self._teb_last_time=-1e9
         self._teb_last_result=None
+        self._teb_result_pose=None
+        self.last_solver='UNINITIALIZED'
+        self.no_safe_rollout=False
+        self.last_dwa_valid_candidates=0
+        self.last_dwa_tested_candidates=0
 
     def _force(self,pose,vref,dist,amax=1.3):
         """Convert v_ref to motor force using the SAME slope dynamics as ROS."""
@@ -158,14 +163,18 @@ class LocalPlanningMission(DynamicMission):
         dset=linspace(dlo,dhi,9)
         start_s=self.nearest_s_and_target((pose.x,pose.y))[0]
         best=None
+        self.last_dwa_valid_candidates=0
+        self.last_dwa_tested_candidates=0
         for speed in vset:
             vref=direction*speed
             for steer in dset:
+                self.last_dwa_tested_candidates+=1
                 res=self._simulate(
                     pose,vref,steer,dist,
                     float(self.c.get('dwa_horizon_s',2.5)),
                     float(self.c.get('dwa_rollout_dt_s',0.2)))
                 if res is None:continue
+                self.last_dwa_valid_candidates+=1
                 states,route_err,clearance,grade_cost,torque_cost=res
                 end=states[-1]
                 progress=direction*(
@@ -318,42 +327,59 @@ class LocalPlanningMission(DynamicMission):
     def local_force_steer(self,pose):
         if not self.path:raise RuntimeError("No global A* route")
         distance=math.hypot(pose.x-self.goal[0],pose.y-self.goal[1])
+        self.no_safe_rollout=False
         if distance<self.goal_tolerance:
             self.local_path=[(pose.x,pose.y)]
             self.fallback_active=False
+            self.last_solver='GOAL_BRAKING'
             return super().local_force_steer(pose)
         if self.mode=="ROLLOUT":
             self.local_path=[]
             self.fallback_active=False
+            self.last_solver='LEGACY_ROLLOUT'
             return super().local_force_steer(pose)
         guide=self.feedback(pose)
         self.fallback_active=False
         chosen=None
         now=time.monotonic()
         if self.mode=="TEB":
-            if now-self._teb_last_time>=float(self.c.get('teb_period_s',.6)):
+            if (self._teb_result_pose is not None and
+                (math.hypot(pose.x-self._teb_result_pose.x,
+                            pose.y-self._teb_result_pose.y)>.14 or
+                 abs(wrap_pi(pose.yaw-self._teb_result_pose.yaw))>.13)):
+                self._teb_last_result=None  # previous path not attached to robot
+            if (self._teb_last_result is None or
+                now-self._teb_last_time>=float(self.c.get('teb_period_s',.6))):
                 self._teb_last_result=self._teb(pose,guide)
                 self._teb_last_time=now
+                self._teb_result_pose=pose
             if self._teb_last_result is not None:
                 cached=self._teb_last_result
-                # Recheck nearby obstacles and slope each tick before reuse.
+                # Recompute motor force with CURRENT speed and grade. Never
+                # replay the old force from a cached TEB evaluation.
+                force=self._force(pose,cached[4],distance)
                 if self._teb_is_safe(pose,cached[5]) and self.rollout_safe(
-                        pose,cached[0],cached[1],horizon_s=.45):
-                    chosen=cached
+                        pose,force,cached[1],horizon_s=.45):
+                    chosen=(force,)+cached[1:]
+                    self.last_solver='TEB'
             if chosen is None:
                 self.fallback_active=True
         if chosen is None:
             chosen=self._dwa(pose,guide)
+            if chosen is not None:
+                self.last_solver=('DWA_FALLBACK' if self.mode=='TEB'
+                                  else 'DWA')
         if chosen is None:
-            # Preserve the previously demonstrated working force sampler
-            # as a collision/grade-checked failsafe, never drive blindly.
+            # The legacy force sampler checks only 1.44s; it can drive
+            # toward an obstacle rejected by a 2.5s DWA window. NEVER
+            # silently switch to that shorter-horizon controller.
             self.fallback_active=True
-            cmd=super().local_force_steer(pose)
+            self.no_safe_rollout=True
+            self.last_solver='NO_SAFE_DWA'
             self.local_path=[]
             self.local_cost=math.inf
-            self.last_delta=cmd[1]
-            self.last_reference_v=cmd[4]
-            return cmd
+            self.last_reference_v=0.
+            return (0.0,0.0,distance,guide[4],0.0)
         force,delta,dist,dev,vref,pts,cost=chosen
         self.local_path=list(pts)
         self.local_cost=cost

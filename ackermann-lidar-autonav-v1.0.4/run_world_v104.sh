@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Gazebo Classic 11 terrain with perimeter walls and v1.0.3 AWD force plugin.
+# Gazebo Classic 11 terrain + world state proxy (no LiDAR required for navigation).
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BASE="$(cd "$ROOT/../ackermann-ros2-gazebo-terrain-v1.0.2" && pwd)"
@@ -23,10 +23,14 @@ if [[ "$ROOT/../ackermann-force-trajectory-v1.0.3/ackermann_force_control/src/ac
  exit 1
 fi
 [[ -s "$BASE/models/ackermann_matlab_terrain_v102/terrain_height.png" ]] || { echo 'terrain v1.0.2 missing' >&2; exit 1; }
-[[ -f /opt/ros/humble/lib/libgazebo_ros_ray_sensor.so ]] || {
-  echo 'ERROR: ray sensor plugin missing; install: sudo apt install ros-humble-gazebo-plugins' >&2
+[[ -f /opt/ros/humble/lib/libgazebo_ros_state.so ]] || {
+  echo 'ERROR: Gazebo state plugin missing; install ros-humble-gazebo-plugins' >&2
   exit 1
 }
+# Use an ephemeral world copy: keep the original terrain and wall geometry.
+PROX_WORLD="${TMPDIR:-/tmp}/ackermann_v104_nearby_${UID:-$(id -u)}_${WALLS}.world"
+python3 "$ROOT/tools/prepare_proximity_world.py" --input "$WORLD_FILE" --output "$PROX_WORLD"
+WORLD_FILE="$PROX_WORLD"
 exec env -i HOME="$HOME" USER="${USER:-$(id -un)}" LOGNAME="${LOGNAME:-$(id -un)}" \
  PATH=/usr/local/bin:/usr/bin:/bin LANG="${LANG:-C.UTF-8}" \
  DISPLAY="${DISPLAY:-}" XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}" \
@@ -37,7 +41,7 @@ set -eo pipefail
 source /opt/ros/humble/setup.bash
 export GAZEBO_MODEL_PATH="$TERRAIN_ROOT/models${GAZEBO_MODEL_PATH:+:$GAZEBO_MODEL_PATH}"
 export GAZEBO_PLUGIN_PATH="$FORCE_LIB:/opt/ros/humble/lib${GAZEBO_PLUGIN_PATH:+:$GAZEBO_PLUGIN_PATH}"
-echo "[WORLD V1.0.4] 3D terrain 40x40m + physical walls=$WALLS | AWD force plugin=$FORCE_LIB | LiDAR 91x5Hz"
+echo "[WORLD V1.0.4] terrain + walls=$WALLS | AWD force=$FORCE_LIB | nearby sensor uses Gazebo /gazebo/model_states, NOT /scan"
 echo "[WORLD] file=$WORLD_FILE"
 exec ros2 launch gazebo_ros gazebo.launch.py \
  world:="$WORLD_FILE" verbose:=false

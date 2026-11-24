@@ -45,8 +45,22 @@ set -u
 if ! ros2 service list | grep -qx /spawn_entity; then
  echo "ERROR: Gazebo ROS spawn service missing; start bash run_world_v103.sh" >&2; exit 1;
 fi
-if ros2 topic list | grep -q '^/ackermann_vehicle/odom$'; then
- echo "ERROR: existing Ackermann robot odom topic detected; restart Gazebo (avoid duplicate robot)" >&2; exit 1;
+# The HMI subscribes to /odom even after the robot has been deleted.
+# 'ros2 topic list' therefore falsely reports the robot as still present.
+# Check actual odometry PUBLISHERS instead of topic existence.
+if ros2 topic info /ackermann_vehicle/odom 2>/dev/null | grep -Eq '^Publisher count: [1-9][0-9]*
+p="$(ros2 pkg prefix ackermann_vehicle)" || { echo "No ackermann_vehicle installed"; exit 1; }
+xacro_file="$p/share/ackermann_vehicle/urdf/ackermann_vehicle.urdf.xacro"
+TMP="$(mktemp -d)"
+trap '\''rm -rf "$TMP"'\'' EXIT
+xacro "$xacro_file" > "$TMP/full.urdf"
+python3 "$BASE/tools/build_robot_stage.py" --source "$TMP/full.urdf" --output "$TMP/stage3.urdf" --stage 3
+python3 "$V104_ROOT/tools/patch_robot_v104.py" --input "$TMP/stage3.urdf" --output "$TMP/force.urdf" --params "$V103_ROOT/matlab_vehicle_params.json" --no-lidar
+ros2 run gazebo_ros spawn_entity.py -entity ackermann_force_nearby_v104 -file "$TMP/force.urdf" -x "$SPAWN_X" -y "$SPAWN_Y" -z "$SPAWN_Z" -Y "$SPAWN_YAW"
+printf "[OK] Spawned v1.0.4 force robot (NO LiDAR) at X=%s Y=%s Z=%s yaw=%srad.\n" "$SPAWN_X" "$SPAWN_Y" "$SPAWN_Z" "$SPAWN_YAW"
+'; then
+ echo "ERROR: another Ackermann odometry PUBLISHER is active; delete the old robot first." >&2
+ exit 1
 fi
 p="$(ros2 pkg prefix ackermann_vehicle)" || { echo "No ackermann_vehicle installed"; exit 1; }
 xacro_file="$p/share/ackermann_vehicle/urdf/ackermann_vehicle.urdf.xacro"

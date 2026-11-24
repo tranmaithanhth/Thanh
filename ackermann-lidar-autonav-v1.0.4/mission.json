@@ -96,5 +96,8 @@
   "lidar_rear_min_clearance_m": 1.45,
   "lidar_brake_decel_m_s2": 1.4,
   "lidar_reaction_s": 0.3,
-  "lidar_replan_interval_s": 1.8
+  "lidar_replan_interval_s": 1.8,
+  "lidar_mount_x_m": 0.2,
+  "lidar_mount_z_m": 0.33,
+  "lidar_ground_tolerance_m": 0.12
 }

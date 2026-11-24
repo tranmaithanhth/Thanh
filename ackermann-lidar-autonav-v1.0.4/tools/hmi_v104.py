@@ -399,8 +399,17 @@ class AckermannHMI(QMainWindow):
         self.mode=mode
         self.mode_label.setText('MODE  '+mode)
         editing=mode=='MANUAL'
+        if not editing:
+            self.pad.zero()
+            self.keyboard_held.clear()
         self.force_edit.setEnabled(editing)
         self.steer_edit.setEnabled(editing)
+        self.force_slider.setEnabled(editing)
+        self.steer_slider.setEnabled(editing)
+        self.btn_apply_exact.setEnabled(editing)
+        self.btn_zero.setEnabled(editing)
+        for b in self.pad_buttons.values():
+            b.setEnabled(editing)
         self.btn_manual.setEnabled(not editing)
         self.btn_auto.setEnabled(mode not in ('AUTO','HANDOFF','STOPPING'))
         self.btn_observe.setEnabled(mode!='OBSERVE')
@@ -409,6 +418,102 @@ class AckermannHMI(QMainWindow):
             else 'background:#e5eefb; color:#254e7b;' if mode=='AUTO'
             else 'background:#f9e5e5; color:#8b2930;' if mode=='STOPPING'
             else '')
+        self._show_manual_command()
+
+    def _change_sensitivity(self,*_):
+        if not hasattr(self,'force_slider') or not hasattr(self,'steer_slider'):
+            return
+        self.pad.set_sensitivity(self.force_slider.value(),
+                                 self.steer_slider.value())
+        self.force_limit_label.setText('Độ mạnh: %d N' % self.force_slider.value())
+        self.steer_limit_label.setText('Độ lái: %d°' % self.steer_slider.value())
+        self._show_manual_command()
+
+    def _show_manual_command(self):
+        if not hasattr(self,'drive_feedback'):
+            return
+        force,angle=self.pad.command() if self.mode=='MANUAL' else (0.,0.)
+        kind='LỆNH SỐ ĐANG GIỮ' if self.pad.latched is not None else 'NHẤN GIỮ'
+        self.drive_feedback.setText(
+            f'{kind}  |  F={force:+.0f} N  |  δ={angle:+.1f}°')
+
+    def _pad_press(self,direction):
+        if self.mode!='MANUAL':
+            return
+        if (time.monotonic()-self.node.odom_at>1.2 or
+            time.monotonic()-self.node.scan_at>1.2):
+            self._log('Không điều khiển: ODOM hoặc LiDAR đã quá hạn.')
+            return
+        self.pad.press(direction)
+        self._show_manual_command()
+
+    def _pad_release(self,direction):
+        self.pad.release(direction)
+        self._show_manual_command()
+
+    def _apply_exact(self):
+        if self.mode!='MANUAL':
+            return
+        if (time.monotonic()-self.node.odom_at>1.2 or
+            time.monotonic()-self.node.scan_at>1.2):
+            self._log('Không áp dụng lệnh số: thiếu ODOM/LiDAR mới.')
+            return
+        self.pad.latch_numeric(self.force_edit.value(),self.steer_edit.value())
+        self._show_manual_command()
+        self._log('Đang giữ lệnh số cố định. Nhấn VỀ 0 để ngừng phát lực.')
+
+    def _zero_command(self):
+        self.pad.zero()
+        self.keyboard_held.clear()
+        if self.mode=='MANUAL':
+            self.node.send_manual(0.0,0.0)
+        self._show_manual_command()
+
+    def eventFilter(self,obj,event):
+        t=event.type()
+        if obj is self and t==QEvent.WindowDeactivate and self.mode=='MANUAL':
+            # Clear held commands on focus loss; never drive in background.
+            self._zero_command()
+        if t not in (QEvent.KeyPress,QEvent.KeyRelease):
+            return super().eventFilter(obj,event)
+        if not isinstance(obj,QWidget) or not (obj is self or self.isAncestorOf(obj)):
+            return super().eventFilter(obj,event)
+        parent=obj
+        while parent is not None and parent is not self:
+            if isinstance(parent,(QDoubleSpinBox,QPlainTextEdit)):
+                return super().eventFilter(obj,event)
+            parent=parent.parent()
+        if event.modifiers() & (Qt.ControlModifier|Qt.AltModifier|Qt.MetaModifier):
+            return super().eventFilter(obj,event)
+        supported=(Qt.Key_W,Qt.Key_A,Qt.Key_S,Qt.Key_D,
+                   Qt.Key_Up,Qt.Key_Down,Qt.Key_Left,Qt.Key_Right,Qt.Key_Space)
+        if event.isAutoRepeat():
+            return True if event.key() in supported else super().eventFilter(obj,event)
+        if event.key()==Qt.Key_Space and t==QEvent.KeyPress:
+            if self.mode=='MANUAL':
+                self._zero_command()
+                return True
+            if self.mode=='AUTO':
+                self._stop()
+                return True
+            return super().eventFilter(obj,event)
+        mapping={
+            Qt.Key_W:'forward',Qt.Key_Up:'forward',
+            Qt.Key_S:'reverse',Qt.Key_Down:'reverse',
+            Qt.Key_A:'left',Qt.Key_Left:'left',
+            Qt.Key_D:'right',Qt.Key_Right:'right',
+        }
+        direction=mapping.get(event.key())
+        if self.mode=='MANUAL' and direction is not None:
+            if t==QEvent.KeyPress:
+                self.keyboard_held[event.key()]=direction
+                self._pad_press(direction)
+            else:
+                self.keyboard_held.pop(event.key(),None)
+                if direction not in self.keyboard_held.values():
+                    self._pad_release(direction)
+            return True
+        return super().eventFilter(obj,event)
 
     def _spin_ros(self):
         try:
@@ -434,10 +539,17 @@ class AckermannHMI(QMainWindow):
         if self.mode=='MANUAL':
             if (time.monotonic()-self.node.odom_at>1.2 or
                 time.monotonic()-self.node.scan_at>1.2):
-                self.node.send_manual(0.0,0.0)
+                # Require a new key/button press after telemetry recovers.
+                self._zero_command()
                 return
-            self.node.send_manual(self.force_edit.value(),
-                                  math.radians(self.steer_edit.value()))
+            if self.node.count_publishers(CMD)>1:
+                self._zero_command()
+                self.node.release_manual()
+                self._set_mode('OBSERVE')
+                self._log('XUNG ĐỘT: đã phát hiện controller thứ hai; bỏ quyền lái.')
+                return
+            force,angle=self.pad.command()
+            self.node.send_manual(force,math.radians(angle))
         if self.stop_pub is not None:
             msg=Float64MultiArray()
             msg.data=[0.,0.]
@@ -472,12 +584,16 @@ class AckermannHMI(QMainWindow):
         if time.monotonic()-self.node.odom_at>1.2:
             QMessageBox.warning(self,'Gazebo','Chưa có odometry mới từ robot.')
             return
+        if time.monotonic()-self.node.scan_at>1.2:
+            QMessageBox.warning(self,'LiDAR','Chưa nhận /scan mới từ robot.')
+            return
+        self._zero_command()
         self.force_edit.setValue(0.0)
         self.steer_edit.setValue(0.0)
         self.node.start_manual()
         self._set_mode('MANUAL')
-        self._log('Thủ công: xuất F (N) và delta (rad) ở 10 Hz. '
-                  'Mất odom/scan sẽ gửi lực 0.')
+        self._log('Manual: giữ W/A/S/D hoặc mũi tên để lái, nhả để về 0. '
+                  'SPACE = VỀ 0; lệnh số chỉ chạy khi bấm GIỮ LỆNH SỐ.')
 
     def _start_auto(self):
         if self.process is not None and self.process.state()!=QProcess.NotRunning:

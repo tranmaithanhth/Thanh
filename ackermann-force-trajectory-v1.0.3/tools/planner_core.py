@@ -384,7 +384,9 @@ class Mission:
                 # Replaces the old '-0.8*pred.v' which wrongly rewarded
                 # overspeed and treated crossing 0.75m/s as cost-free.
                 speed_error=abs(pred.v-vref)
-                overspeed=max(0.,pred.v-vref)
+                # Overspeed is signed along intended motion; in reverse,
+                # -0.50m/s is faster than the -0.35m/s reference.
+                overspeed=max(0.,(1 if vref>=0 else -1)*(pred.v-vref))
                 score=(1.2*d_tgt+0.15*d_goal+0.22*pathcost/12
                        +self.speed_tracking_cost_weight*speed_error
                        +self.overspeed_cost_weight*overspeed*overspeed

@@ -207,11 +207,11 @@ class TestRelocationAndSpawn(unittest.TestCase):
 class TestHillRecoveryGuard(unittest.TestCase):
     def test_recovery_only_for_stagnant_uphill_with_safe_rollout(self):
         nav=(BASE/'tools/autonomous_force_nav.py').read_text(encoding='utf-8')
-        self.assertIn("if not self.dry_run and self.last_progress is not None and vref>0.25:",nav)
-        self.assertIn("max(rear_grade,front_grade)>=",nav)
+        self.assertIn("if not self.dry_run and self.last_progress is not None and abs(vref)>0.25:",nav)
+        self.assertIn("travel_grade=max(direction*rear_grade,direction*front_grade)",nav)
         self.assertIn("stagnant_s>=",nav)
         self.assertIn("self.mission.rollout_safe(",nav)
-        self.assertIn("min(\n                    self.mission.max_F",nav)
+        self.assertIn("magnitude=min(\n                    self.mission.max_F",nav)
 
 class TestDryRunProgressGuard(unittest.TestCase):
     def test_dry_run_skips_progress_watchdog(self):

@@ -47,7 +47,8 @@ for i = 1:numel(keys)
         title([names{i} ' (missing column)']);
         continue;
     end
-    gv = double(G.(key)(:)); mv = double(M.(key)(:));
+    tempG = G.(key); tempM = M.(key);
+    gv = double(tempG(:)); mv = double(tempM(:));
     mInterp = interp1(tM,mv,tG,'linear',NaN);
     errorVec = gv-mInterp;
     if strcmp(key,'yaw_deg')

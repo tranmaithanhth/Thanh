@@ -123,6 +123,20 @@ class TestLocalPlanners(unittest.TestCase):
         self.assertGreaterEqual(candidate[4],0.0)
         self.assertTrue(m.safe_motion(pose.x,pose.y,pose.yaw))
 
+    def test_log_start_pose_uses_reachable_dwa_speed_not_075_legacy(self):
+        cfg=dict(self.config);cfg['local_planner']='DWA'
+        m=LocalPlanningMission(cfg)
+        m.update_dynamic([('obstacle_01',4.1,.3,.75)])
+        m.astar((.63,-.15))
+        pose=Pose(.63,-.15,math.radians(5.),.16)
+        result=m.local_force_steer(pose)
+        self.assertEqual(m.last_solver,'DWA')
+        self.assertFalse(m.no_safe_rollout)
+        self.assertGreater(m.last_dwa_valid_candidates,0)
+        self.assertLessEqual(result[4],.16+
+                             cfg['dwa_max_accel_m_s2']/cfg['planner_control_hz']
+                             +1e-5)
+
     def test_dwa_must_not_silently_use_shorter_legacy_force_sampler(self):
         # The reported vref=.75 at measured v=.16 indicates an old rollout
         # command: reachable DWA maximum is v+.135 at 10Hz. If DWA cannot

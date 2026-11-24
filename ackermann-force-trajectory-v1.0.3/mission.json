@@ -74,5 +74,9 @@
   "recovery_max_force_N": 180,
   "recovery_horizon_s": 0.45,
   "hill_start_full_force_below_m_s": 0.2,
-  "hill_start_release_speed_m_s": 0.45
+  "hill_start_release_speed_m_s": 0.45,
+  "reverse_cruise_speed_m_s": 0.35,
+  "heading_alignment_speed_m_s": 0.22,
+  "relocation_jump_m": 0.65,
+  "relocation_jump_yaw_rad": 0.8
 }

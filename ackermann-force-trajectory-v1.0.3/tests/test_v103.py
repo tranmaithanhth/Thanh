@@ -12,6 +12,51 @@ from planner_core import Mission, Pose, terrain, smootherstep
 from patch_robot_v103 import patch
 
 
+class TestPhysicalPerimeterWalls(unittest.TestCase):
+    """Static checks of the v1.0.3 perimeter world (Gazebo not required)."""
+    def test_four_collision_walls_enclose_40m_heightmap(self):
+        world_file=BASE/'worlds/ackermann_matlab_terrain_walled.world'
+        world=ET.parse(world_file).getroot().find('world')
+        self.assertIsNotNone(world)
+        self.assertEqual(world.find('physics/max_step_size').text.strip(),'0.001')
+        self.assertTrue(any(
+            item.findtext('uri')=='model://ackermann_matlab_terrain_v102'
+            for item in world.findall('include')))
+        walls={m.get('name'):m for m in world.findall('model')
+               if m.get('name','').startswith('boundary_')}
+        self.assertEqual(set(walls),{
+            'boundary_west','boundary_east','boundary_south','boundary_north'})
+        expected={
+            'boundary_west':(-19.5,0.0,0.8,40.0),
+            'boundary_east':(19.5,0.0,0.8,40.0),
+            'boundary_south':(0.0,-19.5,40.0,0.8),
+            'boundary_north':(0.0,19.5,40.0,0.8),
+        }
+        for name,model in walls.items():
+            self.assertEqual(model.findtext('static').strip(),'true')
+            x,y,z,*_=map(float,model.findtext('pose').split())
+            sx,sy,sz=map(float,model.findtext('link/collision/geometry/box/size').split())
+            self.assertEqual((x,y,sx,sy),expected[name])
+            self.assertAlmostEqual(z-sz/2,-0.35)
+            self.assertAlmostEqual(z+sz/2,2.65)
+            self.assertIsNotNone(model.find('link/visual/geometry/box'))
+            self.assertIsNotNone(model.find('link/collision/surface/friction/ode'))
+        original=ET.parse(BASE.parent/'ackermann-ros2-gazebo-terrain-v1.0.2'
+                          /'worlds/ackermann_matlab_terrain.world').getroot().find('world')
+        original_models={m.get('name') for m in original.findall('model')}
+        new_models={m.get('name') for m in world.findall('model')}
+        self.assertEqual(new_models-original_models,set(walls))
+        self.assertTrue(original_models.issubset(new_models))
+
+    def test_launcher_defaults_to_walls_and_can_disable(self):
+        src=(BASE/'run_world_v103.sh').read_text()
+        self.assertIn('ACKERMANN_WALLS:-1',src)
+        self.assertIn('ackermann_matlab_terrain_walled.world',src)
+        self.assertIn('ACKERMANN_WALLS must be 1 or 0',src)
+        cfg=json.loads((BASE/'mission.json').read_text())
+        self.assertLessEqual(cfg['route_bounds_xy'][1],18.0)
+
+
 class TestTerrainAndAutonomy(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

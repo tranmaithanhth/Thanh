@@ -43,6 +43,24 @@ class TestLidarV104(unittest.TestCase):
                      0.0,-2.0,math.pi,now=10.0)
         self.assertAlmostEqual(layer.nearest(-1,now=10.0),2.0)
 
+    def test_ground_echo_rejected_when_beam_hits_known_terrain(self):
+        layer=LidarObstacleLayer(self.cfg)
+        ranges=[math.inf]*91
+        ranges[45]=1.65
+        # Body pitched +0.2rad: a forward beam hits near-ground. A ground
+        # return must not be inserted as a dynamic box or trigger braking.
+        q=(0.0,math.sin(0.1),0.0,math.cos(0.1))
+        layer.update(ranges,-math.pi,2*math.pi/90,.15,8.,0,-2,0,
+                     now=10.0,model_pose=(0.0,-2.0,0.063,*q))
+        self.assertEqual(layer.world_points(now=10.0),[])
+        self.assertTrue(math.isinf(layer.nearest(1,now=10.0)))
+
+    def test_sensor_data_qos_best_effort(self):
+        for name in ('autonomous_lidar_nav.py','lidar_monitor.py'):
+            src=(BASE/'tools'/name).read_text()
+            self.assertIn('qos_profile_sensor_data',src)
+            self.assertIn('model_pose=model_pose',src)
+
     def test_known_static_obstacle_not_duplicated_as_dynamic(self):
         layer=LidarObstacleLayer(self.cfg)
         # lidar origin=(0.6,-2); hit at (4.1,0.3) is a known fixed cylinder

@@ -43,6 +43,8 @@ class ForceNavigator(Node):
         self.route_time=0.0
         self.warned=False
         self.last_recovery_log=0.0
+        self.pending_replan=False
+        self.last_relocation_log=0.0
         self.get_logger().info('Map-only A* + force/steering tracker; NO LiDAR/camera. Robot MUST use v1.0.3 force plugin.')
         self.get_logger().info(
             f'[PLANNER CONFIG] max_grade={self.mission.max_grade:.2f}, '
@@ -55,9 +57,31 @@ class ForceNavigator(Node):
                 'the robot is NOT expected to move; STALL detection disabled.')
 
     def on_odom(self,msg):
+        stamp=msg.header.stamp.sec+msg.header.stamp.nanosec*1e-9
+        if self.odom is not None and self.last_odom_sim is not None:
+            old=self.odom.pose.pose
+            new=msg.pose.pose
+            dist=math.hypot(new.position.x-old.position.x,
+                            new.position.y-old.position.y)
+            yaw_shift=abs(math.atan2(
+                math.sin(yaw_from_quat(new.orientation)-yaw_from_quat(old.orientation)),
+                math.cos(yaw_from_quat(new.orientation)-yaw_from_quat(old.orientation))))
+            dt=stamp-self.last_odom_sim
+            # A large instantaneous pose/yaw jump can be caused by dragging
+            # the robot in Gazebo. Old A* route and tracker latch are invalid.
+            if (0.0<dt<0.8 and
+                    (dist>float(self.cfg.get('relocation_jump_m',0.65)) or
+                     yaw_shift>float(self.cfg.get('relocation_jump_yaw_rad',0.8)))):
+                self.pending_replan=True
+                if time.monotonic()-self.last_relocation_log>0.8:
+                    self.get_logger().warn(
+                        f'[RELOCALIZE] detected pose jump {dist:.2f}m, '
+                        f'yaw={math.degrees(yaw_shift):.1f}deg; '
+                        'replan from current odometry')
+                    self.last_relocation_log=time.monotonic()
         self.odom=msg
         self.odom_wall=time.monotonic()
-        self.last_odom_sim=msg.header.stamp.sec+msg.header.stamp.nanosec*1e-9
+        self.last_odom_sim=stamp
 
     def current_pose(self):
         p=self.odom.pose.pose.position
@@ -110,6 +134,14 @@ class ForceNavigator(Node):
             self.finish('stale odometry / Gazebo paused or frozen')
             return
         pose=self.current_pose()
+        if self.pending_replan:
+            # Do not drive using the previous position's route after
+            # Gazebo teleport. Stop old command and rebuild from new pose.
+            self.publish(0.0,0.0)
+            self.mission.path=[]
+            self.pending_replan=False
+            self.last_progress=(now,pose.x,pose.y)
+            self.route_time=now
         if not self.mission.path:
             try:
                 path=self.mission.astar((pose.x,pose.y))
@@ -126,11 +158,22 @@ class ForceNavigator(Node):
             self.finish(f'GOAL REACHED, XY error {dist:.2f} m')
             return
         if dist>=self.cfg['goal_tolerance_m'] and F==0.0 and delta==0.0 and vref==0.0:
-            # Local planner found no safe rollout. Never force it forward
-            # blindly: report cause promptly rather than silently stalling.
-            self.finish('NO SAFE LOCAL ROLLOUT: robot/route near obstacle or grade boundary;'
-                        ' reset Gazebo and inspect A* path and terrain safety margin')
-            return
+            # When nearly stopped, test reversing the travel direction;
+            # collision/grade checks remain inside the local rollout solver.
+            if abs(pose.v)<0.12 and not self.dry_run:
+                self.mission.drive_direction*=-1
+                self.mission.direction_initialized=True
+                alt_f,alt_d,alt_dist,alt_dev,alt_vref=self.mission.local_force_steer(pose)
+                if alt_vref!=0.0:
+                    F,delta,dist,dev,vref=alt_f,alt_d,alt_dist,alt_dev,alt_vref
+                    self.get_logger().warn(
+                        '[DIRECTION RECOVERY] switched travel direction to '
+                        +('REVERSE' if vref<0 else 'FORWARD'))
+            if vref==0.0:
+                self.finish('NO SAFE LOCAL ROLLOUT: initial heading or route infeasible '
+                            'with current Ackermann turn radius / map clearance. '
+                            'Move robot to a freer pose or change yaw and retry.')
+                return
         if dev>self.cfg['replan_after_deviation_m'] and now-self.route_time>5.0:
             try:
                 self.mission.astar((pose.x,pose.y))
@@ -182,7 +225,8 @@ class ForceNavigator(Node):
             self.get_logger().info(f'[AUTO] P=({pose.x:+.2f},{pose.y:+.2f}) yaw={math.degrees(pose.yaw):+.1f}deg '
                                    f'v={pose.v:+.2f}m/s vref={vref:.2f} F={F:+.1f}N '
                                    f'delta={math.degrees(delta):+.1f}deg goalErr={dist:.2f}m routeErr={dev:.2f}m '
-                                   f'frontGrade={self.mission.axle_grades(pose)[1]:+.3f}'
+                                   f'frontGrade={self.mission.axle_grades(pose)[1]:+.3f} '
+                                   f'drive={"REV" if vref<0 else "FWD"}'
                                    +(' [DRY RUN]' if self.dry_run else ''))
 
 

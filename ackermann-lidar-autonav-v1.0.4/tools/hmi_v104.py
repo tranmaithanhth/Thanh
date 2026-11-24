@@ -869,7 +869,7 @@ class AckermannHMI(QMainWindow):
         # RMSE computation/6 Matplotlib plots should not run >1Hz in the GUI.
         if now-self.last_compare_wall<2.0:return
         self.last_compare_wall=now
-        axs=self.compare_panel.axes.flat
+        axs=list(self.compare_panel.axes.flat)
         for ax in axs:ax.clear()
         keys=COMPARED
         for ax,(key,title) in zip(axs,keys):

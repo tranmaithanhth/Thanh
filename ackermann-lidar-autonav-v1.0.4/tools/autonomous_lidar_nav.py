@@ -41,9 +41,12 @@ class LidarNavigator(ForceNavigator):
     def on_scan(self,msg):
         if self.odom is None:return
         p=self.current_pose()
+        q=self.odom.pose.pose.orientation
+        w=self.odom.pose.pose.position
+        model_pose=(w.x,w.y,w.z,q.x,q.y,q.z,q.w)
         success=self.layer.update(
             msg.ranges,msg.angle_min,msg.angle_increment,msg.range_min,msg.range_max,
-            p.x,p.y,p.yaw)
+            p.x,p.y,p.yaw,model_pose=model_pose)
         if success and time.monotonic()-self.lidar_last_scan_report>=4.0:
             self.lidar_last_scan_report=time.monotonic()
             self.get_logger().info(

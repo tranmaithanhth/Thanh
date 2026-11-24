@@ -25,10 +25,22 @@ def removable_models(names):
     return sorted(n for n in names if is_obstacle_name(n))
 
 
-def unique_obstacle_name(names):
+def unique_obstacle_name(names,bounding_radius_m=0.75):
+    # Encode ONLY an approximate collision radius in the model name, not XY.
+    # NearbyScene reads it when the object enters its 4m observation range.
+    bound=float(bounding_radius_m)
+    if not math.isfinite(bound) or not (0.15<=bound<=5.):
+        raise ValueError("Invalid bounding radius")
+    cm=math.ceil(bound*100)
     used=set(names)
+    used_serials={
+        int(match.group(1)) for name in used
+        if (match:=re.fullmatch(
+            r"hmi_obstacle_(\\d{3,4})(?:_r\\d{3,4})?",name))
+    }
     for i in range(1,10000):
-        name=f"{OBSTACLE_PREFIX}{i:03d}"
+        if i in used_serials:continue
+        name=f"{OBSTACLE_PREFIX}{i:03d}_r{cm:03d}"
         if name not in used:
             return name
     raise RuntimeError("Too many HMI obstacles")
@@ -61,7 +73,7 @@ def validate_obstacle(shape,size_m,height_m):
 
 def obstacle_sdf(name,shape,size_m,height_m):
     """Static collision+visual Gazebo SDF, never a decorative marker."""
-    if not (isinstance(name,str) and re.fullmatch(r"hmi_obstacle_\d{3,4}",name)):
+    if not (isinstance(name,str) and re.fullmatch(r"hmi_obstacle_\d{3,4}(?:_r\d{3,4})?",name)):
         raise ValueError("Invalid HMI obstacle name")
     r,h=validate_obstacle(shape,size_m,height_m)
     root=ET.Element("sdf",{"version":"1.6"})

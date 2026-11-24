@@ -387,6 +387,118 @@ class AckermannHMI(QMainWindow):
         self.statusBar().showMessage(
             'HMI theo dõi qua ROS 2; không chạy manual_drive_v104.sh song song.',7000)
 
+    def _scene_spin(self,minimum,maximum,value,suffix=' m',step=0.25):
+        spin=QDoubleSpinBox()
+        spin.setRange(float(minimum),float(maximum))
+        spin.setDecimals(2)
+        spin.setSingleStep(step)
+        spin.setValue(value)
+        spin.setSuffix(suffix)
+        return spin
+
+    def _build_scene_editor(self):
+        # The operator can edit the full Gazebo scene. This does NOT reveal
+        # obstacle positions to the autonomous planner beyond its 4 m range.
+        page=QWidget()
+        outer=QVBoxLayout(page)
+        intro=QLabel(
+            'QUẢN LÝ GAZEBO: thêm/xóa robot và vật cản thật. '
+            'Nhập X–Y hoặc nhấp trực tiếp tab Quỹ đạo XY để chọn điểm. '
+            'A* vẫn KHÔNG biết trước vị trí vật cản.')
+        intro.setWordWrap(True)
+        outer.addWidget(intro)
+
+        chooser=QHBoxLayout()
+        chooser.addWidget(QLabel('Nhấp bản đồ để đặt vị trí cho:'))
+        self.scene_pick_target=QComboBox()
+        self.scene_pick_target.addItems(['Vật cản','Robot'])
+        chooser.addWidget(self.scene_pick_target)
+        self.scene_pick_note=QLabel('Chọn điểm trên bản đồ, sau đó nhấn Thêm.')
+        chooser.addWidget(self.scene_pick_note,stretch=1)
+        outer.addLayout(chooser)
+
+        both=QHBoxLayout()
+        robot=QGroupBox('Robot Ackermann — 1 robot đang hoạt động')
+        rg=QGridLayout(robot)
+        self.robot_x=self._scene_spin(-18,18,0.)
+        self.robot_y=self._scene_spin(-18,18,-2.)
+        self.robot_yaw=self._scene_spin(-180,180,0.,' °',5.)
+        for row,(lab,widget) in enumerate([
+            ('Tọa độ X',self.robot_x),('Tọa độ Y',self.robot_y),
+            ('Hướng yaw',self.robot_yaw)]):
+            rg.addWidget(QLabel(lab),row,0)
+            rg.addWidget(widget,row,1)
+        self.scene_robot_state=QLabel('Đang kiểm tra danh sách robot trong Gazebo...')
+        self.scene_robot_state.setWordWrap(True)
+        rg.addWidget(self.scene_robot_state,3,0,1,2)
+        self.btn_spawn_robot=QPushButton('➕ THÊM ROBOT TẠI X–Y')
+        self.btn_spawn_robot.clicked.connect(self._scene_spawn_robot)
+        self.btn_delete_robot=QPushButton('🗑 XÓA ROBOT')
+        self.btn_delete_robot.setObjectName('stopButton')
+        self.btn_delete_robot.clicked.connect(self._scene_delete_robot)
+        rg.addWidget(self.btn_spawn_robot,4,0,1,2)
+        rg.addWidget(self.btn_delete_robot,5,0,1,2)
+        rg.addWidget(QLabel(
+            'Muốn đổi chỗ robot: DỪNG LỆNH → Xóa robot → '
+            'chọn X/Y/yaw → Thêm robot. Không tạo hai robot chung topic.'),6,0,1,2)
+        both.addWidget(robot,stretch=1)
+
+        obstacle=QGroupBox('Tạo vật cản vật lý tại vị trí tùy chọn')
+        og=QGridLayout(obstacle)
+        self.obstacle_x=self._scene_spin(-18,18,7.)
+        self.obstacle_y=self._scene_spin(-18,18,-2.)
+        self.obstacle_shape=QComboBox()
+        self.obstacle_shape.addItem('Hình trụ',userData='cylinder')
+        self.obstacle_shape.addItem('Hộp vuông',userData='box')
+        self.obstacle_size=self._scene_spin(.15,2.5,.65,' m',.1)
+        self.obstacle_height=self._scene_spin(.15,3.,1.2,' m',.1)
+        for row,(lab,widget) in enumerate([
+            ('Tọa độ X',self.obstacle_x),('Tọa độ Y',self.obstacle_y),
+            ('Hình dạng',self.obstacle_shape),
+            ('Bán kính / nửa cạnh',self.obstacle_size),
+            ('Chiều cao',self.obstacle_height)]):
+            og.addWidget(QLabel(lab),row,0)
+            og.addWidget(widget,row,1)
+        self.btn_add_obstacle=QPushButton('➕ THÊM VẬT CẢN')
+        self.btn_add_obstacle.clicked.connect(self._scene_add_obstacle)
+        og.addWidget(self.btn_add_obstacle,5,0,1,2)
+        note=QLabel(
+            'Vật cản có collision thật. Z tự tính theo địa hình MATLAB. '
+            'Có thể thêm khi robot tự hành, nhưng không đặt sát hoặc đè lên robot.')
+        note.setWordWrap(True)
+        og.addWidget(note,6,0,1,2)
+        both.addWidget(obstacle,stretch=1)
+        outer.addLayout(both)
+
+        inventory=QGroupBox('Danh sách vật cản ĐANG TỒN TẠI trong Gazebo (góc nhìn người vận hành)')
+        iv=QVBoxLayout(inventory)
+        warning=QLabel(
+            'Danh sách dưới đây để bạn sửa thế giới mô phỏng; '
+            'nó KHÔNG được truyền vào bản đồ A* trước khi robot phát hiện.')
+        warning.setWordWrap(True)
+        iv.addWidget(warning)
+        self.scene_list=QListWidget()
+        self.scene_list.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.scene_list.setMinimumHeight(125)
+        iv.addWidget(self.scene_list)
+        ir=QHBoxLayout()
+        self.btn_delete_selected=QPushButton('🗑 Xóa vật cản được chọn')
+        self.btn_delete_selected.clicked.connect(self._scene_delete_selected)
+        self.btn_delete_all=QPushButton('XÓA TẤT CẢ VẬT CẢN')
+        self.btn_delete_all.setObjectName('stopButton')
+        self.btn_delete_all.clicked.connect(self._scene_delete_all)
+        ir.addWidget(self.btn_delete_selected)
+        ir.addWidget(self.btn_delete_all)
+        iv.addLayout(ir)
+        outer.addWidget(inventory)
+        outer.addStretch(1)
+        scroll=QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(page)
+        self.tabs.addTab(scroll,'Quản lý mô phỏng')
+        self.map_panel.canvas.mpl_connect('button_press_event',
+                                           self._scene_map_click)
+
     def _style(self):
         self.setStyleSheet("""
             QMainWindow,QWidget {background:#f7f9fc; color:#172438;}

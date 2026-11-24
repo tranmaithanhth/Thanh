@@ -53,6 +53,9 @@ class NearbyNavigator(ForceNavigator):
         self.last_replan=0.0
         self.last_seen_names=set()
         self.last_visible=[]
+        self.local_recovery_since=None
+        self.local_recovery_last_log=0.0
+        self.local_recovery_attempts=0
         self.get_logger().info(
             '[NEARBY] simulator-only bounded neighborhood radius=%.1fm; '
             'no /scan subscription; no preloaded obstacle XY coordinates; '
@@ -93,6 +96,48 @@ class NearbyNavigator(ForceNavigator):
             pose.pose.orientation.w=1.0
             msg.poses.append(pose)
         self.local_path_pub.publish(msg)
+
+    def finish(self,reason):
+        """Intercept the base tracker terminal NO SAFE response for DWA/TEB.
+
+        It used to stop the whole run immediately. With new nearby objects,
+        the safe reaction is to brake and retry a fresh global route at low
+        speed, subject to a bounded recovery deadline. Never enable a blind
+        forward command or weaken obstacle inflation.
+        """
+        if (reason.startswith('NO SAFE LOCAL ROLLOUT') and
+                self.mission.mode in ('DWA','TEB') and self.odom is not None):
+            now=time.monotonic()
+            pose=self.current_pose()
+            if self.local_recovery_since is None:
+                self.local_recovery_since=now
+                self.local_recovery_attempts=0
+            elapsed=now-self.local_recovery_since
+            if elapsed>float(self.cfg.get('local_recovery_timeout_s',12.)):
+                super().finish(
+                    'NO SAFE DWA/TEB after %.1fs of braking/replanning; '
+                    'pose=(%.2f,%.2f) yaw=%.1fdeg obstacle inflation kept' %
+                    (elapsed,pose.x,pose.y,math.degrees(pose.yaw)))
+                return
+            self.hold(pose,'DWA/TEB: no safe 2.5s candidate; braking',now)
+            if now-self.local_recovery_last_log>1.0:
+                self.local_recovery_last_log=now
+                self.get_logger().warn(
+                    '[LOCAL RECOVERY] solver=%s valid=%d/%d v=%+.2f '
+                    'time=%.1fs attempts=%d' % (
+                    self.mission.last_solver,
+                    self.mission.last_dwa_valid_candidates,
+                    self.mission.last_dwa_tested_candidates,
+                    pose.v,elapsed,self.local_recovery_attempts))
+            if (abs(pose.v)<.12 and
+                now-self.last_replan>=float(
+                    self.cfg.get('nearby_replan_interval_s',1.8))):
+                self.local_recovery_attempts+=1
+                self._try_replan(pose,now,'[LOCAL RECOVERY A*]')
+                # Base class already tries a safe reverse candidate when
+                # stopped. Do not force a blind reverse command here.
+            return
+        super().finish(reason)
 
     def braking_command(self,pose):
         if abs(pose.v)<0.045:return 0.0
@@ -151,6 +196,20 @@ class NearbyNavigator(ForceNavigator):
         # The planner receives ONLY previously detected nearby objects, not
         # positions from mission.json or distant world models.
         self.mission.update_dynamic(self.scene.remembered(now))
+        # Earlier than the legacy 2m deviation trigger, replan if the
+        # vehicle is visibly leaving the route while near a discovered
+        # object. The reported failure climbed from 0.73 to 1.03m before
+        # the short rollout became infeasible.
+        if (len(self.mission.path)>=2 and self.last_visible and
+            now-self.route_time>2.0 and
+            now-self.last_replan>=float(
+                self.cfg.get('nearby_replan_interval_s',1.8))):
+            _,dev,_,_=self.mission.nearest_s_and_target((pose.x,pose.y))
+            if (dev>float(self.cfg.get('nearby_early_replan_dev_m',0.95))
+                and any(math.hypot(pose.x-x,pose.y-y)<r+3.0
+                        for _,x,y,r in self.last_visible)):
+                if not self._try_replan(pose,now,'[NEARBY DEVIATION REPLAN]'):
+                    return
         if self.pending_replan:
             self.publish(self.braking_command(pose),0.0)
             self.mission.path=[]
@@ -200,17 +259,24 @@ class NearbyNavigator(ForceNavigator):
         super().on_tick()
         # Actual local trajectory selected by DWA/TEB; never confuse with A*.
         self.publish_local_path()
-        if now-self.local_last_log>=2.0 and not self.finished:
+        if (not self.mission.no_safe_rollout and not self.finished and
+                self.local_recovery_since is not None):
+            self.get_logger().info(
+                '[LOCAL RECOVERY] feasible motion found; resume planner')
+            self.local_recovery_since=None
+        if now-self.local_last_log>=1.0:
             self.local_last_log=now
-            fallback=self.mission.fallback_active
-            if fallback!=self.local_last_fallback or now-self.last_scene_log<.25:
-                self.get_logger().info(
-                    '[LOCAL %s] predicted_points=%d cost=%.3f fallback=%s '
-                    'vref=%+.2f' % (
-                        self.mission.mode,len(self.mission.local_path),
-                        self.mission.local_cost,fallback,
-                        self.mission.last_reference_v))
-            self.local_last_fallback=fallback
+            self.get_logger().info(
+                '[LOCAL] requested=%s effective=%s '
+                'DWA_valid=%d/%d predicted_points=%d cost=%.3f '
+                'fallback=%s vref=%+.2f no_safe=%s' % (
+                    self.mission.mode,self.mission.last_solver,
+                    self.mission.last_dwa_valid_candidates,
+                    self.mission.last_dwa_tested_candidates,
+                    len(self.mission.local_path),self.mission.local_cost,
+                    self.mission.fallback_active,
+                    self.mission.last_reference_v,self.mission.no_safe_rollout))
+            self.local_last_fallback=self.mission.fallback_active
 
 
 def main():

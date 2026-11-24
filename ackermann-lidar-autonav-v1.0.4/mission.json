@@ -108,5 +108,15 @@
   "teb_lookahead_m": 3.6,
   "teb_max_evals": 85,
   "teb_period_s": 0.6,
-  "teb_verify_horizon_s": 1.2
+  "teb_verify_horizon_s": 1.2,
+  "traction_window_s": 1.6,
+  "traction_min_xy_m": 0.045,
+  "traction_min_vref_m_s": 0.15,
+  "traction_after_stall_s": 0.35,
+  "traction_start_force_N": 65,
+  "traction_ramp_N_per_s": 22,
+  "traction_max_force_N": 145,
+  "traction_low_xy_speed_m_s": 0.035,
+  "traction_slip_wheel_speed_m_s": 0.65,
+  "traction_slip_force_cap_N": 75
 }

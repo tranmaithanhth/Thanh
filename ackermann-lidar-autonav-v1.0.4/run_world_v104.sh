@@ -36,7 +36,7 @@ exec env -i HOME="$HOME" USER="${USER:-$(id -un)}" LOGNAME="${LOGNAME:-$(id -un)
 set -eo pipefail
 source /opt/ros/humble/setup.bash
 export GAZEBO_MODEL_PATH="$TERRAIN_ROOT/models${GAZEBO_MODEL_PATH:+:$GAZEBO_MODEL_PATH}"
-export GAZEBO_PLUGIN_PATH="$FORCE_LIB${GAZEBO_PLUGIN_PATH:+:$GAZEBO_PLUGIN_PATH}"
+export GAZEBO_PLUGIN_PATH="$FORCE_LIB:/opt/ros/humble/lib${GAZEBO_PLUGIN_PATH:+:$GAZEBO_PLUGIN_PATH}"
 echo "[WORLD V1.0.4] 3D terrain 40x40m + physical walls=$WALLS | AWD force plugin=$FORCE_LIB | LiDAR 91x5Hz"
 echo "[WORLD] file=$WORLD_FILE"
 exec ros2 launch gazebo_ros gazebo.launch.py \

@@ -96,6 +96,7 @@ class Mission:
         # It stays latched while rolling to prevent rapid gear reversal.
         self.drive_direction = 1
         self.direction_initialized = False
+        self.direction_hold_ticks = 0
 
     def to_grid(self, x, y):
         return (round((x-self.bounds[0])/self.grid), round((y-self.bounds[2])/self.grid))
@@ -143,6 +144,7 @@ class Mission:
             raise ValueError(f'Goal {self.goal} is outside the safe planning corridor.')
         self.drive_direction=1
         self.direction_initialized=False
+        self.direction_hold_ticks=0
         if self.segment_safe(start,self.goal):
             self.path=[tuple(start),self.goal]
             return self.path
@@ -316,6 +318,9 @@ class Mission:
         """
         bearing=math.atan2(target[1]-pose.y,target[0]-pose.x)
         err=abs(wrap_pi(bearing-pose.yaw))
+        if self.direction_hold_ticks>0:
+            self.direction_hold_ticks-=1
+            return self.drive_direction
         if not self.direction_initialized:
             self.drive_direction=-1 if err>math.radians(105) else 1
             self.direction_initialized=True

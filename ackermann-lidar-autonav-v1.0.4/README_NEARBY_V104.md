@@ -22,6 +22,18 @@ Phát hiện vật cản dựa trên **tâm mô hình** và bán kính bao tròn
 mô hình mới quá lớn hoặc có hình dạng dài cần kiểm tra/sửa giá trị này trước
 khi kết luận an toàn. Không biết hình dạng chính xác, không có occlusion.
 
+## Bộ lập quỹ đạo cục bộ DWA và TEB
+
+Bản cập nhật ROS 2 đã bổ sung **DWA** và **TEB rút gọn** bên cạnh
+bộ rollout lực–lái cũ, cùng chung tuyến A* toàn cục và cảm biến vùng
+4 m của Gazebo. Trong HMI, chọn thuật toán cục bộ bằng ô
+**Lập quỹ đạo cục bộ** trước khi bấm Tự hành. HMI hiển thị quỹ đạo
+cục bộ màu tím từ topic `/ackermann_vehicle/local_path` cùng đường
+A* toàn cục. Lực và góc lái vẫn được cấp qua `/force_steer`.
+
+**Giải thích thuật toán, giới hạn, lệnh chạy và đối chiếu MATLAB:**
+[README_LOCAL_PLANNERS_V104.md](README_LOCAL_PLANNERS_V104.md).
+
 ## Quản lý mô phỏng từ HMI
 
 Từ bản cập nhật mới, HMI có thêm tab **Quản lý mô phỏng** để xóa/spawn

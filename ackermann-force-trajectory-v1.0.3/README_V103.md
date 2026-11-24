@@ -273,3 +273,44 @@ bash auto_drive_v103.sh
 ```
 
 Để quan sát trước, dùng `bash auto_drive_v103.sh --dry-run` và Ctrl+C sau khi xem tuyến. Trong phiên chạy thật, đối chiếu `frontGrade`, lệnh `F`, `v` và XY ở `x=2.1…4.0`. **Kết quả kỳ vọng** gần `x≈2.35`: khi cầu trước gặp dốc và xe rất chậm, lệnh F không còn chỉ ~24 N mà sẽ tăng tới mức hỗ trợ; khi xe tăng vận tốc, lệnh giảm dần. Đây là kết quả kiểm tra mã và mô hình, **chưa phải xác nhận leo dốc tự động thành công trong Gazebo**. Nếu robot vẫn kẹt, gửi log `[AUTO]` / `[HILL RECOVERY]` và `/ackermann_vehicle/force_state` tại điểm dừng để kiểm tra lực bám hoặc va chạm gầm.
+
+## 14. Robot chỉ đến đích từ vị trí đầu tiên, không tới đích sau khi đổi vị trí/yaw (24/11/2026)
+
+**Triệu chứng:** đường A* từ `(-0.4,-2)` đã chạy được, nhưng khi kéo robot trong Gazebo hoặc spawn tại tọa độ khác, robot có thể không tìm được đường, mắc kẹt vì đang quay lưng về phía đích, hoặc sử dụng lại quỹ đạo cũ. Đó là giới hạn của **A* hình học XY** và bộ bám tiến-only trước đây, **không chứng minh plugin lực AWD bị hỏng**.
+
+**Bản sửa Python/JSON/Bash, không sửa C++:**
+
+- `Mission.astar(start)` luôn lấy **tọa độ thực tại thời điểm bắt đầu lập kế hoạch**, không dùng `(-0.4,-2)` cố định. Nếu điểm mới an toàn theo vùng cấm vật lý nhưng nằm trong khoảng đệm *bổ sung* 0,35m của global route, planner thử nối ngắn đến các ô A* đủ khoảng đệm. Đoạn nối vẫn được kiểm tra va chạm thật (không bỏ inflation 1,20m); nếu không có đoạn nối an toàn, **báo lỗi và dừng**.
+- `choose_drive_direction(pose,target)` xét **yaw**, ưu tiên **lùi** khi mục tiêu tuyến đường nằm phía sau hơn 105°. Khi di chuyển lùi, bộ bám đặt `vref<0`, tự cấp `F<0` nếu cần, và điều chỉnh góc lái. Tốc độ lùi tham chiếu giới hạn `0.35m/s`; ở hướng gần vuông góc với đích, giảm tốc tham chiếu còn `0.22m/s` để quay đầu dần. Không dùng lệnh vận tốc `cmd_vel`, vẫn xuất `[F_drive_N,steer_rad]`.
+- Hỗ trợ leo dốc và bộ phát hiện không tiến triển cũng đã áp dụng với dấu lực phù hợp khi xe chạy lùi. Có cảnh báo `drive=FWD` / `drive=REV` trong log `[AUTO]`.
+- Khi ROS odometry báo bước nhảy tọa độ >0,65m hoặc quay đột ngột >0,8rad giữa hai mẫu gần nhau (giới hạn thời gian <0,8s), node coi như robot đã **bị di chuyển trong Gazebo**, đặt lệnh lực 0 và lập lại A* từ vị trí mới. Với dịch chuyển chậm liên tục, cơ chế replan khi lệch tuyến >`replan_after_deviation_m` vẫn áp dụng.
+- `spawn_force_v103.sh` chấp nhận `ACKERMANN_SPAWN_X`, `ACKERMANN_SPAWN_Y`, `ACKERMANN_SPAWN_YAW` (**đơn vị radian**) và tự tính `SPAWN_Z` từ địa hình `terrain(x,y)+height_shift+0.007m`. Tham số `ACKERMANN_SPAWN_Z` vẫn cho phép đặt cao độ thủ công khi cần. Trước đó Z cố định 0,055m, không phù hợp với chỗ cao của đoạn dốc/đỉnh dốc.
+
+**Cách kiểm tra nhiều vị trí:** đóng hết Gazebo và controller cũ, sau đó tại thư mục v1.0.3:
+```bash
+cd ~/ackermann_humble_ws/Thanh
+git pull --ff-only origin main
+cd ackermann-force-trajectory-v1.0.3
+python3 -m unittest discover -s tests -v
+# Terminal 1:
+bash run_world_v103.sh
+# Terminal 2: chọn MỘT vị trí, ví dụ trên đỉnh dốc, hướng về +X:
+ACKERMANN_SPAWN_X=7.0 ACKERMANN_SPAWN_Y=-3.0 ACKERMANN_SPAWN_YAW=0.0 bash spawn_force_v103.sh
+# Terminal 3: chạy thử A* trước rồi lái thật:
+bash auto_drive_v103.sh --dry-run
+# Ctrl+C sau khi thấy A* waypoints:
+bash auto_drive_v103.sh
+```
+
+**Thử xe quay lưng về đích:** cần **khởi động lại world sạch**, rồi:
+```bash
+ACKERMANN_SPAWN_X=0.0 ACKERMANN_SPAWN_Y=-2.0 ACKERMANN_SPAWN_YAW=3.14159 bash spawn_force_v103.sh
+bash auto_drive_v103.sh --dry-run
+# Ctrl+C, sau đó:
+bash auto_drive_v103.sh
+```
+Dòng `[AUTO]` lúc này dự kiến hiển thị `drive=REV`, `vref<0`; xe có thể lùi theo chiều +X, không cần quay đầu 180° tại chỗ.
+
+**Giới hạn cần lưu ý:** Đây là *geometric A* + heading-aware forward/reverse tracker*, **chưa phải Hybrid A*/Reeds–Shepp hay bộ lập kế hoạch quay đầu nhiều lần**. Những điểm xuất phát có vật cản sát cả hai phía, độ dốc không an toàn, không đủ bán kính quay hoặc đặt xe lọt vào collision vẫn có thể không tới đích; chương trình phải dừng với lý do thay vì ép xe xuyên vật cản. Khi kéo robot trong Gazebo, chú ý cao độ và xoay hướng; thao tác an toàn và lặp lại được hơn là khởi động world sạch rồi `spawn` ở tọa độ/yaw mong muốn.
+
+**Nếu thất bại:** gửi log `[RELOCALIZE]`, `A* planned`, `[AUTO]`, `[HILL RECOVERY]` hoặc `NO SAFE LOCAL ROLLOUT` cùng tọa độ/yaw và tình trạng va chạm để kiểm tra chính xác trường hợp đó. Kiểm thử Python chỉ chạy mô hình rút gọn; vẫn cần xác nhận thực nghiệm trong Gazebo.

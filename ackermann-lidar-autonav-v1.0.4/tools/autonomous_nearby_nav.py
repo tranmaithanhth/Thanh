@@ -19,9 +19,8 @@ from gazebo_msgs.msg import ModelStates
 from std_msgs.msg import Float64MultiArray
 
 from autonomous_force_nav import ForceNavigator
-from lidar_obstacles import stopping_distance
 from lidar_planner import DynamicMission
-from nearby_scene import NearbyScene, nearest_clearance
+from nearby_scene import NearbyScene, nearest_clearance, stopping_distance
 
 SCENE_TOPIC='/gazebo/model_states'
 LOCAL_TOPIC='/ackermann_vehicle/nearby_obstacles'

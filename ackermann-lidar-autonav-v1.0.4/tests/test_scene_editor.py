@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import subprocess
 import sys
 import types
 import unittest
@@ -113,6 +114,15 @@ class TestSceneEditor(unittest.TestCase):
         scene.ingest([],[],0.,0.,now=4.)
         self.assertEqual(scene.visible,[])
         self.assertEqual(scene.remembered(now=4.),[])
+
+    def test_gazebo_launchers_pass_bash_syntax_check(self):
+        # Protect the nested bash -c quoting used by the force robot spawner.
+        for script in ('spawn_force_v104.sh','run_world_v104.sh',
+                       'auto_drive_v104.sh','hmi_v104.sh'):
+            result=subprocess.run(
+                ['bash','-n',str(ROOT/script)],
+                capture_output=True,text=True,check=False)
+            self.assertEqual(result.returncode,0,msg=script+': '+result.stderr)
 
     def test_hmi_integrates_gazebo_services_and_robot_spawn(self):
         hmi=(ROOT/'tools/hmi_v104.py').read_text(encoding='utf-8')

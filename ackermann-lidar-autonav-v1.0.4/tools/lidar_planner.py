@@ -14,10 +14,22 @@ class DynamicMission(Mission):
     def update_dynamic(self, world_xy):
         """Update LiDAR obstacle points. Rebuild occupancy lazily during A*."""
         new=[]
-        for x,y in world_xy:
-            if math.isfinite(x) and math.isfinite(y):
-                new.append((float(x),float(y),self.dynamic_radius))
-        self.dynamic_obstacles=new[:int(self.c.get('lidar_max_dynamic_points',30))]
+        for item in world_xy:
+            # Legacy LiDAR uses (x,y). Nearby Gazebo scene uses (name,x,y,r).
+            if len(item)==4:
+                _,x,y,r=item
+            elif len(item)==3:
+                x,y,r=item
+            elif len(item)==2:
+                x,y=item
+                r=self.dynamic_radius
+            else:
+                raise ValueError('Invalid dynamic obstacle record')
+            if all(math.isfinite(float(v)) for v in (x,y,r)) and float(r)>0:
+                new.append((float(x),float(y),float(r)))
+        self.dynamic_obstacles=new[:int(self.c.get(
+            'nearby_max_remembered_obstacles',
+            self.c.get('lidar_max_dynamic_points',30)))]
 
     def safe_xy(self,x,y,margin=0.0):
         if not super().safe_xy(x,y,margin=margin):return False

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Spawn ONE stage3 robot, no LiDAR/camera, physical parameter mapping from MATLAB.
+# Spawn stage3 AWD force robot WITH lightweight Gazebo Classic LiDAR, no camera.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BASE="$(cd "$ROOT/../ackermann-ros2-gazebo-terrain-v1.0.2" && pwd)"
@@ -26,13 +26,13 @@ else
 fi
 [[ -f "$WS/install/ackermann_force_control/lib/libackermann_force_drive.so" ]] || { echo 'Run bash setup_v103.sh first.' >&2; exit 1; }
 # Fail early if the physics-step force fix has not been recompiled.
-if [[ "$ROOT/ackermann_force_control/src/ackermann_force_drive.cpp" -nt "$WS/install/ackermann_force_control/lib/libackermann_force_drive.so" ]]; then
+if [[ "$ROOT/../ackermann-force-trajectory-v1.0.3/ackermann_force_control/src/ackermann_force_drive.cpp" -nt "$WS/install/ackermann_force_control/lib/libackermann_force_drive.so" ]]; then
   echo 'ERROR: stale force plugin .so. Run: bash setup_v103.sh' >&2
   exit 1
 fi
 exec env -i HOME="$HOME" USER="${USER:-$(id -un)}" LOGNAME="${LOGNAME:-$(id -un)}" \
  PATH=/usr/local/bin:/usr/bin:/bin LANG="${LANG:-C.UTF-8}" ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}" \
- V103_ROOT="$ROOT" BASE="$BASE" ACKERMANN_WS="$WS" SPAWN_X="$SPAWN_X" SPAWN_Y="$SPAWN_Y" SPAWN_Z="$SPAWN_Z" SPAWN_YAW="$SPAWN_YAW" \
+ V104_ROOT="$ROOT" BASE="$BASE" ACKERMANN_WS="$WS" SPAWN_X="$SPAWN_X" SPAWN_Y="$SPAWN_Y" SPAWN_Z="$SPAWN_Z" SPAWN_YAW="$SPAWN_YAW" \
  bash --noprofile --norc -c '
 set -eo pipefail
 # ROS 2 environment scripts may inspect unset variables (e.g. AMENT_TRACE_SETUP_FILES).
@@ -52,7 +52,7 @@ TMP="$(mktemp -d)"
 trap '\''rm -rf "$TMP"'\'' EXIT
 xacro "$xacro_file" > "$TMP/full.urdf"
 python3 "$BASE/tools/build_robot_stage.py" --source "$TMP/full.urdf" --output "$TMP/stage3.urdf" --stage 3
-python3 "$V103_ROOT/tools/patch_robot_v103.py" --input "$TMP/stage3.urdf" --output "$TMP/force.urdf" --params "$V103_ROOT/matlab_vehicle_params.json"
-ros2 run gazebo_ros spawn_entity.py -entity ackermann_force_v103 -file "$TMP/force.urdf" -x "$SPAWN_X" -y "$SPAWN_Y" -z "$SPAWN_Z" -Y "$SPAWN_YAW"
-printf "[OK] Spawned v1.0.3 force robot at X=%s Y=%s Z=%s yaw=%srad (near ground).\n" "$SPAWN_X" "$SPAWN_Y" "$SPAWN_Z" "$SPAWN_YAW"
+python3 "$V104_ROOT/tools/patch_robot_v104.py" --input "$TMP/stage3.urdf" --output "$TMP/force.urdf" --params "$V103_ROOT/matlab_vehicle_params.json"
+ros2 run gazebo_ros spawn_entity.py -entity ackermann_force_lidar_v104 -file "$TMP/force.urdf" -x "$SPAWN_X" -y "$SPAWN_Y" -z "$SPAWN_Z" -Y "$SPAWN_YAW"
+printf "[OK] Spawned v1.0.4 force+LiDAR robot at X=%s Y=%s Z=%s yaw=%srad (near ground).\n" "$SPAWN_X" "$SPAWN_Y" "$SPAWN_Z" "$SPAWN_YAW"
 '

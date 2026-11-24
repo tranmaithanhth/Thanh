@@ -99,5 +99,14 @@
   "nearby_brake_decel_m_s2": 1.4,
   "nearby_reaction_s": 0.3,
   "nearby_replan_interval_s": 1.8,
-  "nearby_max_remembered_obstacles": 64
+  "nearby_max_remembered_obstacles": 64,
+  "local_planner": "DWA",
+  "dwa_horizon_s": 2.5,
+  "dwa_rollout_dt_s": 0.2,
+  "dwa_max_accel_m_s2": 1.35,
+  "teb_path_nodes": 7,
+  "teb_lookahead_m": 3.6,
+  "teb_max_evals": 85,
+  "teb_period_s": 0.6,
+  "teb_verify_horizon_s": 1.2
 }

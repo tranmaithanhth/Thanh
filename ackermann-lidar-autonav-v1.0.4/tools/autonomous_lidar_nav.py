@@ -77,6 +77,18 @@ class LidarNavigator(ForceNavigator):
             super().on_tick()
             return
         now=time.monotonic()
+        # LiDAR failure must not bypass the ROS/physics watchdogs inherited
+        # from v1.0.3 (publisher arbitration, stale odom, runtime limit).
+        if now-self.start_wall>self.cfg['max_runtime_s']:
+            self.finish('time limit reached')
+            return
+        if self.odom_wall is None or now-self.odom_wall>1.2:
+            self.finish('stale odometry / Gazebo paused or frozen')
+            return
+        if (self.cmd_pub is not None and now-self.start_wall>2.0 and
+                self.count_publishers('/ackermann_vehicle/force_steer')!=1):
+            self.finish('multiple force_steer publishers; close other controllers')
+            return
         pose=self.current_pose()
         if self.layer.age(now)>float(self.cfg.get('lidar_stale_timeout_s',1.1)):
             self.hold(pose,'missing/stale /scan: no driving permitted',now)
@@ -105,12 +117,7 @@ class LidarNavigator(ForceNavigator):
         stop_threshold=stopping_distance(
             pose.v,float(self.cfg.get('lidar_brake_decel_m_s2',1.4)),
             float(self.cfg.get('lidar_reaction_s',0.3)),float(clearance))
-        if math.isfinite(nearest) and nearest<stop_threshold:
-            self.hold(pose,
-                f'obstacle {nearest:.2f}m in travel direction; '
-                f'brake threshold {stop_threshold:.2f}m, speed={pose.v:+.2f}m/s',
-                now)
-            return
+        hazard_close=math.isfinite(nearest) and nearest<stop_threshold
 
         # When a NEW hit intersects the remaining route, brake to a low
         # speed before asking A* for an alternate global path.
@@ -122,6 +129,7 @@ class LidarNavigator(ForceNavigator):
                     route=self.mission.astar((pose.x,pose.y))
                     self.route_time=now
                     self.last_progress=(now,pose.x,pose.y)
+                    self.publish_route()
                     self.get_logger().warn(
                         '[LIDAR REPLAN] '+str([(round(x,2),round(y,2)) for x,y in route]))
                 except (ValueError,RuntimeError) as e:
@@ -131,6 +139,16 @@ class LidarNavigator(ForceNavigator):
             else:
                 self.hold(pose,'new obstacle blocks global A* route; braking to replan',now)
                 return
+
+        if hazard_close:
+            # Replanning above still executes while stationary even when an
+            # obstacle is inside the braking envelope. Never accelerate
+            # toward that obstacle solely because A* found a new path.
+            self.hold(pose,
+                f'obstacle {nearest:.2f}m in travel direction; '
+                f'brake threshold {stop_threshold:.2f}m, speed={pose.v:+.2f}m/s',
+                now)
+            return
 
         if not self.mission.path:
             # A* may be temporarily blocked by a moving obstacle; do not
@@ -143,6 +161,7 @@ class LidarNavigator(ForceNavigator):
                 route=self.mission.astar((pose.x,pose.y))
                 self.route_time=now
                 self.last_progress=(now,pose.x,pose.y)
+                self.publish_route()
                 self.get_logger().info(
                     '[LIDAR A*] '+str([(round(x,2),round(y,2)) for x,y in route]))
             except (ValueError,RuntimeError) as e:

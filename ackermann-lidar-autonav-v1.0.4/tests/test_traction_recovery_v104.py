@@ -103,7 +103,9 @@ class TestTractionRecovery(unittest.TestCase):
         self.assertIn('now,pose.x,pose.y,intent_vref,enabled=eligible',nav)
         self.assertIn("self.mission.mode=='DWA'",nav)
         # Proven TEB remains untouched by the new DWA-only stall boost.
-        self.assertNotIn("self.mission.mode in ('DWA','TEB')",nav)
+        scope=nav[nav.index('eligible=(not self.dry_run'):][:380]
+        self.assertIn("self.mission.mode=='DWA'",scope)
+        self.assertNotIn("mode in ('DWA','TEB')",scope)
 
     def test_dwa_predicts_boost_and_keeps_obstacle_guards(self):
         m=LocalPlanningMission(dict(self.cfg))

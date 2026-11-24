@@ -127,6 +127,80 @@ ros2 topic echo /ackermann_vehicle/planned_path --once
 ros2 topic echo /ackermann_vehicle/force_steer --once
 ```
 
+## Khắc phục sự cố NO SAFE LOCAL ROLLOUT (24/11/2026)
+
+Người dùng báo xe chạy tới P=(1,88; -0,31), yaw=-23°, v~0,30m/s
+rồi dừng với `NO SAFE LOCAL ROLLOUT` khi vừa nhìn thấy trụ tại
+(4,1;0,3). Trước khi dừng log `vref=0.75m/s`, lực thay đổi từ -3,5
+đến 23,1N, góc lái tối đa -28,1°. Không nên tăng Fmax=300 N hoặc
+độ lệch lái max=0,52 rad chỉ dựa trên log này.
+
+**Chẩn đoán kỹ thuật:** ở 10Hz, DWA có giới hạn tăng vận tốc ~0,135m/s
+mỗi chu kỳ, nên với vận tốc thực 0,16m/s không thể sinh
+vref=0,75m/s trực tiếp. Các dòng đó cho thấy rất có thể
+chế độ `ROLLOUT` đang chạy hoặc bộ DWA/TEB đã nhảy sang fallback
+`local_force_steer` v1.0.3. Fallback cũ chỉ đánh giá ~1,44s,
+trong khi DWA xét 2,5s, do đó có thể đánh giá lạc quan về quãng
+đường tới vật cản và đưa xe vào thế không thể xoay đủ an toàn.
+
+**Đã sửa:**
+1. DWA và TEB khi không có ứng viên dự báo an toàn sẽ **không gọi
+   bộ rollout cũ**, trừ khi người vận hành chọn rõ `ROLLOUT`.
+   Thay vào đó báo `NO_SAFE_DWA`, phanh và chờ A* lập lại đường.
+2. Trước đây base node kết thúc ngay khi nhận lệnh cục bộ rỗng.
+   Bộ Nearby mới có **recovery giới hạn 12 giây**: phanh theo vận tốc,
+   chỉ lập lại A* khi vận tốc <0,12m/s, không nhảy qua vùng collision.
+   Sau 12s không khắc phục sẽ kết thúc với lý do rõ ràng.
+3. Khi có vật cản mới và sai lệch A*>0,95m, đánh giá lập lại đường
+   sớm hơn ngưỡng cũ 2m, bảo đảm kiểm tra khoảng cách thực.
+4. TEB không dùng lại lực kéo từ tư thế cũ khi cached band vẫn hợp lệ;
+   lực được tính lại từ vận tốc và độ dốc hiện tại.
+5. Thêm topic `/ackermann_vehicle/local_planner_status` kiểu
+   `std_msgs/String` có JSON `requested`, `effective`,
+   `dwa_valid`, `dwa_tested`, `fallback`, `no_safe`.
+   HMI hiển thị **Bộ cục bộ thực tế / ứng viên an toàn**.
+   Log có `[LOCAL] requested=... effective=... DWA_valid=.../...`.
+6. Thêm bài kiểm thử tái hiện P=(.63,-.15), v=.16 và
+   P=(1.88,-.31), yaw=-23°, v=.30 với trụ gần; bảo đảm bộ DWA
+   có phương án và không giả làm vref=.75 ở đầu hành trình.
+
+**Thử đúng cách:**
+
+```bash
+cd ~/ackermann_humble_ws/Thanh
+git status --short
+git pull --ff-only origin main
+cd ackermann-lidar-autonav-v1.0.4
+python3 -m compileall -q tools tests
+python3 -m unittest discover -s tests -v
+bash hmi_v104.sh
+```
+
+Chọn **DWA** trước khi bấm Tự hành; theo dõi ngay trong HMI
+`DWA → DWA [xx/yy]`. Các trạng thái chẩn đoán:
+- `DWA → DWA`: chính DWA thực thi, không fallback.
+- `TEB → DWA_FALLBACK`: TEB tìm quỹ đạo không an toàn, DWA thay thế.
+- `DWA/TEB → NO_SAFE_DWA`: không có ứng viên an toàn, lệnh phanh/
+  tìm tuyến lại, không chạy mù theo fallback cũ.
+- `ROLLOUT → LEGACY_ROLLOUT`: người vận hành chủ động chọn chế độ cũ.
+
+Kiểm tra topic nếu cần:
+```bash
+ros2 topic echo /ackermann_vehicle/local_planner_status --once
+ros2 topic echo /ackermann_vehicle/force_steer --once
+```
+
+Nếu vẫn bị phanh lâu và kết thúc ở cùng tọa độ, lưu 10–20 dòng
+`[LOCAL]`, `[LOCAL RECOVERY]`, `[NEARBY DEVIATION REPLAN]`, cùng
+ảnh A* và quỹ đạo tím. Điều đó cho biết nhánh nào đã từ chối ứng viên.
+**Không tăng góc lái tối đa** nếu chưa đối chiếu hành trình bánh và
+hình học trục quay, vì max steer hiện tại ±0,52rad (±29,8°)
+tương ứng bán kính tối thiểu `0,8/tan(0,52)≈1,40m` trong mô hình
+xe đạp.
+
+Hệ thống đã qua kiểm thử offline/GitHub Actions; hành vi trên Gazebo
+cụ thể của người dùng vẫn cần chạy lại để xác nhận đến đích.
+
 ## 5. Các bài thử so sánh MATLAB — Gazebo
 
 Làm 3 lần mô phỏng có cùng (x,y,yaw), cùng vật cản, thông số

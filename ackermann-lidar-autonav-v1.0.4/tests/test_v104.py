@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""ROS-free regression tests: LiDAR geometry, dynamic A*, and sensor URDF."""
+"""ROS-free regression tests for v1.0.4 default Nearby, plus legacy LiDAR.
+
+Default navigation is NOT LiDAR: no preloaded obstacle coordinates, nearby
+Gazebo ModelStates, and unchanged 20kg AWD force plugin. Legacy LiDAR filters
+remain independently tested as optional regression coverage.
+"""
 from __future__ import annotations
 import json
 import math
@@ -61,8 +66,12 @@ class TestLidarV104(unittest.TestCase):
             self.assertIn('qos_profile_sensor_data',src)
             self.assertIn('model_pose=model_pose',src)
 
-    def test_known_static_obstacle_not_duplicated_as_dynamic(self):
-        layer=LidarObstacleLayer(self.cfg)
+    def test_legacy_known_static_obstacle_not_duplicated_as_dynamic(self):
+        # Compatibility test for the optional LEGACY LiDAR filter only.
+        # v1.0.4 default must NOT preload this position into its A* map.
+        legacy_cfg=dict(self.cfg)
+        legacy_cfg['obstacles_xy_radius']=[(4.1,0.3,0.75)]
+        layer=LidarObstacleLayer(legacy_cfg)
         # lidar origin=(0.6,-2); hit at (4.1,0.3) is a known fixed cylinder
         bearing=math.atan2(2.3,3.5)
         i=round((bearing+math.pi)/(2*math.pi/90))
@@ -100,7 +109,7 @@ class TestLidarV104(unittest.TestCase):
         with self.assertRaises(ValueError):
             m.astar((0.0,-2.0))
 
-    def test_lidar_in_urdf_keeps_20kg_force_plugin(self):
+    def test_no_lidar_in_default_urdf_keeps_20kg_force_plugin(self):
         cfg=json.loads((BASE/'matlab_vehicle_params.json').read_text())
         root=ET.Element('robot',{'name':'ackermann_vehicle'})
         for name in ('chassis','rear_left_wheel','rear_right_wheel',
@@ -111,35 +120,51 @@ class TestLidarV104(unittest.TestCase):
             ET.SubElement(inertial,'mass',{'value':'1'})
             ET.SubElement(inertial,'inertia',{'ixx':'0.1','iyy':'0.1','izz':'0.1'})
         with tempfile.TemporaryDirectory() as d:
-            src,dst=Path(d)/'stage3.urdf',Path(d)/'force_scan.urdf'
+            src,dst=Path(d)/'stage3.urdf',Path(d)/'force_nearby.urdf'
             ET.ElementTree(root).write(src)
-            mass=patch(src,dst,cfg)
+            # Exactly the same option that spawn_force_v104.sh now passes.
+            mass=patch(src,dst,cfg,use_lidar=False)
             urdf=ET.parse(dst).getroot()
             self.assertAlmostEqual(mass,20.0,places=6)
-            self.assertEqual(len(urdf.findall("link[@name='lidar_link']")),1)
-            self.assertEqual(len(urdf.findall("joint[@name='lidar_fixed_joint']")),1)
-            plugin=urdf.find('.//plugin[@name="gazebo_ros_ray_sensor_lidar_v104"]')
-            self.assertIsNotNone(plugin)
-            self.assertEqual(plugin.get('filename'),'libgazebo_ros_ray_sensor.so')
-            self.assertEqual(plugin.findtext('output_type'),'sensor_msgs/LaserScan')
-            self.assertEqual(plugin.findtext('frame_name'),'lidar_link')
-            sensor=urdf.find('.//sensor[@name="lidar_2d"]')
-            self.assertEqual(sensor.findtext('update_rate'),'5')
-            self.assertEqual(sensor.findtext('ray/scan/horizontal/samples'),'91')
-            self.assertEqual(sensor.findtext('ray/range/max'),'8.0')
-            self.assertEqual(len(urdf.findall('.//plugin[@name="ackermann_force_drive"]')),1)
+            self.assertEqual(len(urdf.findall("link[@name='lidar_link']")),0)
+            self.assertEqual(len(urdf.findall("joint[@name='lidar_fixed_joint']")),0)
+            self.assertEqual(len(urdf.findall(".//sensor[@name='lidar_2d']")),0)
+            self.assertEqual(len(urdf.findall('.//plugin[@name="gazebo_ros_ray_sensor_lidar_v104"]')),0)
+            plugins=urdf.findall('.//plugin[@name="ackermann_force_drive"]')
+            self.assertEqual(len(plugins),1)
+            plugin=plugins[0]
+            self.assertEqual(plugin.get('filename'),'libackermann_force_drive.so')
+            self.assertAlmostEqual(float(plugin.findtext('max_force')),
+                                   float(cfg['max_drive_force_N']))
+            self.assertEqual(plugin.findtext('drive_mode'),cfg['drive_mode'])
 
     def test_launcher_and_safety_guards(self):
         run=(BASE/'run_world_v104.sh').read_text()
         spawn=(BASE/'spawn_force_v104.sh').read_text()
-        nav=(BASE/'tools/autonomous_lidar_nav.py').read_text()
-        self.assertIn('libgazebo_ros_ray_sensor.so',run)
+        auto=(BASE/'auto_drive_v104.sh').read_text()
+        nav=(BASE/'tools/autonomous_nearby_nav.py').read_text()
+        cfg=json.loads((BASE/'mission.json').read_text())
+        # Check actual default execution path; never assert stale LiDAR code.
+        self.assertIn('libgazebo_ros_state.so',run)
+        self.assertIn('prepare_proximity_world.py',run)
         self.assertIn('patch_robot_v104.py',spawn)
-        self.assertIn("self.layer.age(now)>",nav)
-        self.assertIn("self.layer.nearest(direction,now)",nav)
-        self.assertIn("self.mission.path_blocked",nav)
-        self.assertIn("self.mission.astar((pose.x,pose.y))",nav)
+        self.assertIn('--no-lidar',spawn)
+        self.assertIn('autonomous_nearby_nav.py',auto)
+        self.assertNotIn('autonomous_lidar_nav.py',auto)
+        self.assertIn('ModelStates,SCENE_TOPIC',nav)
+        self.assertIn("SCENE_TOPIC='/gazebo/model_states'",nav)
+        self.assertNotIn('LaserScan',nav)
+        self.assertEqual(cfg['obstacles_xy_radius'],[])
+        self.assertIn("cfg['obstacles_xy_radius']=[]",nav)
+        # Preserve fail-safe behavior: stale scene data => zero/brake;
+        # dynamic obstacles => replan, or hold if too close.
+        self.assertIn('self.scene.age(now)>',nav)
+        self.assertIn('nearest_clearance(',nav)
+        self.assertIn('self.mission.update_dynamic(self.scene.remembered(now))',nav)
+        self.assertIn('self.mission.path_blocked',nav)
+        self.assertIn('self.mission.astar((pose.x,pose.y))',nav)
         self.assertIn('self.braking_command(pose)',nav)
+        self.assertIn('multiple force_steer publishers',nav)
 
 
 if __name__=='__main__':unittest.main()

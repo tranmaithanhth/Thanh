@@ -221,7 +221,7 @@ class Mission:
         if needs_connector:
             # First leg is physically safe, not route-margin safe; never
             # simplify it into a long shortcut across the obstacle buffer.
-            if len(raw)<3 or not self.segment_safe(raw[0],raw[1],margin=0.0):
+            if len(raw)<2 or not self.segment_safe(raw[0],raw[1],margin=0.0):
                 raise RuntimeError('A* initial physical connector invalid')
             smooth=[raw[0],raw[1]]
             i=1

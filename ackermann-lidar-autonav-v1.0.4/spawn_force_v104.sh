@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Spawn stage3 AWD force robot WITH lightweight Gazebo Classic LiDAR, no camera.
+# Spawn stage3 AWD force robot WITHOUT LiDAR; Gazebo ModelStates virtual nearby sensing.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BASE="$(cd "$ROOT/../ackermann-ros2-gazebo-terrain-v1.0.2" && pwd)"
@@ -54,7 +54,7 @@ TMP="$(mktemp -d)"
 trap '\''rm -rf "$TMP"'\'' EXIT
 xacro "$xacro_file" > "$TMP/full.urdf"
 python3 "$BASE/tools/build_robot_stage.py" --source "$TMP/full.urdf" --output "$TMP/stage3.urdf" --stage 3
-python3 "$V104_ROOT/tools/patch_robot_v104.py" --input "$TMP/stage3.urdf" --output "$TMP/force.urdf" --params "$V103_ROOT/matlab_vehicle_params.json"
-ros2 run gazebo_ros spawn_entity.py -entity ackermann_force_lidar_v104 -file "$TMP/force.urdf" -x "$SPAWN_X" -y "$SPAWN_Y" -z "$SPAWN_Z" -Y "$SPAWN_YAW"
-printf "[OK] Spawned v1.0.4 force+LiDAR robot at X=%s Y=%s Z=%s yaw=%srad (near ground).\n" "$SPAWN_X" "$SPAWN_Y" "$SPAWN_Z" "$SPAWN_YAW"
+python3 "$V104_ROOT/tools/patch_robot_v104.py" --input "$TMP/stage3.urdf" --output "$TMP/force.urdf" --params "$V103_ROOT/matlab_vehicle_params.json" --no-lidar
+ros2 run gazebo_ros spawn_entity.py -entity ackermann_force_nearby_v104 -file "$TMP/force.urdf" -x "$SPAWN_X" -y "$SPAWN_Y" -z "$SPAWN_Z" -Y "$SPAWN_YAW"
+printf "[OK] Spawned v1.0.4 force robot (NO LiDAR) at X=%s Y=%s Z=%s yaw=%srad.\n" "$SPAWN_X" "$SPAWN_Y" "$SPAWN_Z" "$SPAWN_YAW"
 '

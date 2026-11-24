@@ -896,7 +896,7 @@ class AckermannHMI(QMainWindow):
                 ('MATLAB/Gazebo căn chỉnh theo t=0 (không tự bù vị trí).  '+
                  '  |  '.join(pieces) if pieces else
                  'Không có khoảng thời gian trùng khớp.')+
-                '\\n'+match_text)
+                '\n'+match_text)
         else:self.compare_summary.setText('Chưa nạp CSV MATLAB để vẽ chồng.')
 
     def _save_gazebo(self):

@@ -300,7 +300,7 @@ class NearbyNavigator(ForceNavigator):
         # sample, yielding XY_progress_speed=nan and F_floor=0 forever.
         # This branch runs only after map/obstacle hold guards above.
         selected_vref=self.mission.last_reference_v
-        eligible=(not self.dry_run and self.mission.mode in ('DWA','TEB')
+        eligible=(not self.dry_run and self.mission.mode=='DWA'
                   and not self.mission.no_safe_rollout and bool(self.mission.path)
                   and math.hypot(pose.x-self.mission.goal[0],
                                  pose.y-self.mission.goal[1])>

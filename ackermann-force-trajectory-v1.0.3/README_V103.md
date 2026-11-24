@@ -314,3 +314,43 @@ Dòng `[AUTO]` lúc này dự kiến hiển thị `drive=REV`, `vref<0`; xe có 
 **Giới hạn cần lưu ý:** Đây là *geometric A* + heading-aware forward/reverse tracker*, **chưa phải Hybrid A*/Reeds–Shepp hay bộ lập kế hoạch quay đầu nhiều lần**. Những điểm xuất phát có vật cản sát cả hai phía, độ dốc không an toàn, không đủ bán kính quay hoặc đặt xe lọt vào collision vẫn có thể không tới đích; chương trình phải dừng với lý do thay vì ép xe xuyên vật cản. Khi kéo robot trong Gazebo, chú ý cao độ và xoay hướng; thao tác an toàn và lặp lại được hơn là khởi động world sạch rồi `spawn` ở tọa độ/yaw mong muốn.
 
 **Nếu thất bại:** gửi log `[RELOCALIZE]`, `A* planned`, `[AUTO]`, `[HILL RECOVERY]` hoặc `NO SAFE LOCAL ROLLOUT` cùng tọa độ/yaw và tình trạng va chạm để kiểm tra chính xác trường hợp đó. Kiểm thử Python chỉ chạy mô hình rút gọn; vẫn cần xác nhận thực nghiệm trong Gazebo.
+
+## 15. Bổ sung 4 tường bao va chạm vật lý quanh địa hình 40×40m (24/11/2026)
+
+Dựa trên `ackermann-ros2-gazebo-terrain-v1.0.2/export_report.json`, heightmap nằm trong `x,y ∈ [-20,+20] m` và cao độ PNG thuộc khoảng 0–1,176m. **Không thay đổi terrain gốc:** tạo world riêng cho v1.0.3 tại `worlds/ackermann_matlab_terrain_walled.world`, tái sử dụng `model://ackermann_matlab_terrain_v102`, 4 vật cản trụ, marker và physics ODE 1ms như cũ.
+
+**Tường có collision vật lý (không chỉ visual)**, là 4 mô hình `<static>true</static>` chứa hình hộp `collision` và `visual` màu xanh xám, ma sát mặt tường `mu=mu2=1.1`:
+
+| Tường | Tâm (x,y) m | Kích thước (X,Y,Z) m |
+|---|---|---|
+| Tây (`boundary_west`) | (-19,5; 0) | (0,8; 40; 3,0) |
+| Đông (`boundary_east`) | (+19,5; 0) | (0,8; 40; 3,0) |
+| Nam (`boundary_south`) | (0; -19,5) | (40; 0,8; 3,0) |
+| Bắc (`boundary_north`) | (0; +19,5) | (40; 0,8; 3,0) |
+
+Cả bốn tâm có `z=1.15m`, đáy `z=-0.35m`, đỉnh `z=2.65m`. Mặt trong của tường ở `x/y=±19.1m`, sát mép 40m và trên mức terrain cao nhất ≈1,176m hơn 1,47m. Tường nối kín 4 cạnh, không có khoảng hở ở góc, và chặn robot nếu va vào tường trong mô phỏng thông thường. Không nhầm tường với hệ thống kiểm tra an toàn A*: **va chạm tường là lớp bảo vệ cuối**, không thay thế điều khiển tránh tường. Vì vậy đã hạ `mission.json.route_bounds_xy` giới hạn x phải từ 19 xuống **18m** để điểm tham chiếu cầu sau không lập đường sát tường phía Đông.
+
+**Cách sử dụng:** `run_world_v103.sh` hiện mặc định tải world **có tường**, không cần đặt thêm biến:
+
+```bash
+cd ~/ackermann_humble_ws/Thanh
+git pull --ff-only origin main
+cd ackermann-force-trajectory-v1.0.3
+python3 -m unittest discover -s tests -v
+# Đóng hẳn Gazebo cũ, mở ở Terminal 1:
+bash run_world_v103.sh
+# Terminal 2 (sau khi world chạy):
+bash spawn_force_v103.sh
+# Terminal 3 (tuỳ chọn):
+bash auto_drive_v103.sh
+```
+
+Log trong Terminal 1: `[WORLD] ... physical perimeter walls=1`. **Phải khởi động lại Gazebo** vì sửa world không thể thêm tường vào một phiên đã mở bằng lệnh chạy world cũ.
+
+Muốn dùng world cũ, không có tường, để so sánh:
+
+```bash
+ACKERMANN_WALLS=0 bash run_world_v103.sh
+```
+
+Không cần build lại `ackermann_force_control` (chỉ thêm world SDF và sửa Bash/JSON). Không đổi `ackermann-ros2-gazebo-terrain-v1.0.2`, địa hình MATLAB hoặc mômen/phần mềm điều khiển. Có thể quan sát mô hình tường trong Gazebo và bật View → Collisions để kiểm tra vật lý. **Chưa xác nhận tương tác va chạm trong bản Gazebo đang chạy trên máy người dùng**; các test Python kiểm tra cấu trúc SDF, kích thước, vị trí và 4 phần tử collision.

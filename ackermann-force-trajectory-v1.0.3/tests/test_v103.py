@@ -62,6 +62,40 @@ class TestTerrainAndAutonomy(unittest.TestCase):
         self.assertGreater(next_p.v,self.cfg['max_speed_m_s'])
         self.assertLessEqual(next_p.v,self.cfg['physical_max_speed_m_s'])
 
+    def test_new_safe_start_inside_extra_route_margin(self):
+        # The inflated physical radius is 1.95m; the additional route
+        # buffer increases it to 2.30m. This is a valid *physical* start.
+        mission=Mission(self.cfg)
+        start=(4.1,-1.82)
+        self.assertTrue(mission.safe_xy(*start,margin=0.0))
+        self.assertFalse(mission.safe_xy(*start,margin=mission.route_margin))
+        path=mission.astar(start)
+        self.assertEqual(path[0],start)
+        self.assertEqual(path[-1],(16.0,0.6))
+        self.assertTrue(mission.segment_safe(path[0],path[1],margin=0.0))
+        for a,b in zip(path[1:],path[2:]):
+            self.assertTrue(mission.segment_safe(a,b))
+
+    def test_refuses_physical_collision_start(self):
+        mission=Mission(self.cfg)
+        with self.assertRaises(ValueError):
+            mission.astar((4.1,-1.5))
+
+    def test_rotated_spawn_uses_reverse_instead_of_wrong_forward(self):
+        mission=Mission(self.cfg)
+        mission.astar((0.0,-2.0))
+        p=Pose(0.0,-2.0,math.pi,0.0)
+        f,delta,dist,dev,vref=mission.local_force_steer(p)
+        self.assertLess(vref,-0.05)
+        self.assertLess(f,0.0)
+        self.assertLessEqual(abs(f),mission.max_F)
+        self.assertLessEqual(abs(delta),mission.max_delta)
+
+    def test_reverse_overspeed_penalty_is_signed(self):
+        src=(BASE/'tools/planner_core.py').read_text()
+        self.assertIn('(1 if vref>=0 else -1)*(pred.v-vref)',src)
+        self.assertIn('self.drive_direction=-1 if err>math.radians(105) else 1',src)
+
     def test_astar_segments_clear(self):
         for start in [(-0.4,-2.0),(-4,-2),(0,0)]:
             route=self.m.astar(start)
@@ -152,6 +186,22 @@ class TestTerrainAndAutonomy(unittest.TestCase):
         else:
             self.fail(f'Reduced simulated tracker failed to reach goal: {p}')
         self.assertLess(i/10,120)
+
+
+class TestRelocationAndSpawn(unittest.TestCase):
+    def test_teleport_replans(self):
+        nav=(BASE/'tools/autonomous_force_nav.py').read_text(encoding='utf-8')
+        self.assertIn('self.pending_replan=True',nav)
+        self.assertIn('if self.pending_replan:',nav)
+        self.assertIn('self.mission.path=[]',nav)
+        self.assertIn('self.mission.drive_direction*=-1',nav)
+
+    def test_spawn_initial_height_and_yaw_options(self):
+        script=(BASE/'spawn_force_v103.sh').read_text(encoding='utf-8')
+        self.assertIn('ACKERMANN_SPAWN_YAW',script)
+        self.assertIn('ACKERMANN_SPAWN_Z:-auto',script)
+        self.assertIn('terrain(x,y)[0]',script)
+        self.assertIn('-Y "$SPAWN_YAW"',script)
 
 
 class TestHillRecoveryGuard(unittest.TestCase):

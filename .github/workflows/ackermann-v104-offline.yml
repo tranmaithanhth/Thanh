@@ -1,0 +1,29 @@
+name: Ackermann v1.0.4 offline checks
+on:
+  push:
+    paths:
+      - 'ackermann-lidar-autonav-v1.0.4/**'
+      - '.github/workflows/ackermann-v104-offline.yml'
+  pull_request:
+    paths:
+      - 'ackermann-lidar-autonav-v1.0.4/**'
+  workflow_dispatch:
+
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate Python syntax and unit tests
+        working-directory: ackermann-lidar-autonav-v1.0.4
+        run: |
+          python3 -m compileall -q tools tests
+          python3 -m unittest discover -s tests -v
+      - name: Validate Bash launchers
+        working-directory: ackermann-lidar-autonav-v1.0.4
+        run: |
+          bash -n setup_v104.sh run_world_v104.sh spawn_force_v104.sh
+          bash -n auto_drive_v104.sh scan_v104.sh hmi_v104.sh

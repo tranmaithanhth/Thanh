@@ -102,6 +102,9 @@ class LocalPlanningMission(DynamicMission):
         self.no_safe_rollout=False
         self.last_dwa_valid_candidates=0
         self.last_dwa_tested_candidates=0
+        # Command force floor from the real Gazebo XY progress watchdog.
+        # Zero in normal driving; the cost/rollouts use it when enabled.
+        self.traction_force_floor_N=0.0
 
     def _force(self,pose,vref,dist,amax=1.3):
         """Convert v_ref to motor force using the SAME slope dynamics as ROS."""
@@ -116,6 +119,14 @@ class LocalPlanningMission(DynamicMission):
         if floor>0:
             sign=1 if vref>0 else -1
             F=sign*max(sign*F,floor)
+        # Motor force is raised only at a truly slow predicted state after
+        # the REAL robot has made no XY progress. Merely increasing vref
+        # does not overcome static contact/rolling resistance in Gazebo.
+        # The prediction uses this same floor so DWA rechecks collisions
+        # at the higher acceleration, not blindly applying extra torque.
+        if abs(vref)>=0.14 and abs(pose.v)<0.36:
+            sign=1 if vref>0 else -1
+            F=sign*max(sign*F,max(0.0,self.traction_force_floor_N))
         return clamp(F,-self.max_F,self.max_F)
 
     def _clearance(self,x,y):

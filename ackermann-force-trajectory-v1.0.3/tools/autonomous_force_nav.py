@@ -163,6 +163,7 @@ class ForceNavigator(Node):
             if abs(pose.v)<0.12 and not self.dry_run:
                 self.mission.drive_direction*=-1
                 self.mission.direction_initialized=True
+                self.mission.direction_hold_ticks=20
                 alt_f,alt_d,alt_dist,alt_dev,alt_vref=self.mission.local_force_steer(pose)
                 if alt_vref!=0.0:
                     F,delta,dist,dev,vref=alt_f,alt_d,alt_dist,alt_dev,alt_vref
@@ -196,19 +197,22 @@ class ForceNavigator(Node):
         # Prefer measured progress (not odom twist alone: the body can vibrate
         # and report v=0.1m/s while its world XYZ remains unchanged).
         # Do not increase force near obstacles or beyond the configured cap.
-        if not self.dry_run and self.last_progress is not None and vref>0.25:
+        if not self.dry_run and self.last_progress is not None and abs(vref)>0.25:
             rear_grade,front_grade=self.mission.axle_grades(pose)
+            direction=1 if vref>0 else -1
             stagnant_s=now-self.last_progress[0]
-            if (max(rear_grade,front_grade)>=self.cfg.get('recovery_min_front_grade',0.06)
+            travel_grade=max(direction*rear_grade,direction*front_grade)
+            if (travel_grade>=self.cfg.get('recovery_min_front_grade',0.06)
                     and stagnant_s>=self.cfg.get('recovery_after_s',2.0)
-                    and pose.v<0.35):
-                candidate=min(
+                    and 0.0<=direction*pose.v<0.35):
+                magnitude=min(
                     self.mission.max_F,
                     float(self.cfg.get('recovery_max_force_N',180.0)),
                     float(self.cfg.get('recovery_initial_force_N',75.0))+
                     float(self.cfg.get('recovery_ramp_N_per_s',22.0))*
                     (stagnant_s-float(self.cfg.get('recovery_after_s',2.0))))
-                if candidate>F and self.mission.rollout_safe(
+                candidate=direction*magnitude
+                if direction*candidate>direction*F and self.mission.rollout_safe(
                         pose,candidate,delta,
                         float(self.cfg.get('recovery_horizon_s',0.45))):
                     F=candidate
@@ -217,7 +221,7 @@ class ForceNavigator(Node):
                         self.get_logger().warn(
                             f'[HILL RECOVERY] stationary={stagnant_s:.1f}s, '
                             f'rear_grade={rear_grade:+.3f}, front_grade={front_grade:+.3f}, '
-                            f'boost F={F:.1f}N (cap {self.mission.max_F:.0f}N)')
+                            f'boost F={F:+.1f}N (cap {self.mission.max_F:.0f}N)')
         self.publish(F,delta)
         self.publish_route()  # published at 10 Hz; allows RViz to join without transient QoS
         if now-self.last_report>=1.0/self.cfg['logging_hz']:

@@ -89,6 +89,36 @@ class TestTerrainAndAutonomy(unittest.TestCase):
         self.assertGreaterEqual(f, self.cfg['hill_start_force_N'] - 1e-6)
         self.assertLessEqual(abs(f),self.m.max_F+1e-7)
 
+    def test_front_axle_on_ramp_before_rear(self):
+        # This reproduces the measured Gazebo stall:
+        # rear P=(2.35,-1.75), yaw~4 deg, v~0.12, while the nose is uphill.
+        self.m.astar((-0.4,-2))
+        p=Pose(2.35,-1.75,math.radians(4.0),0.12)
+        rear,front=self.m.axle_grades(p)
+        self.assertLess(rear,0.025)
+        self.assertGreater(front,0.12)
+        self.assertGreater(front,self.cfg['hill_start_min_grade'])
+        self.assertGreater(self.m.grade_for_dynamics(p),rear)
+        f0,delta,_,dist,dev,vref=self.m.feedback(p)
+        self.assertGreaterEqual(f0,self.cfg['hill_start_force_N']-1e-6)
+        self.assertTrue(self.m.rollout_safe(p,175.0,delta,0.45))
+
+    def test_mpc_does_not_cancel_hill_start_force(self):
+        self.m.astar((-0.4,-2))
+        p=Pose(2.35,-1.75,math.radians(4.0),0.12)
+        F,delta,dist,dev,vref=self.m.local_force_steer(p)
+        self.assertGreater(vref,0.25)
+        self.assertGreaterEqual(F,self.cfg['hill_start_force_N']-1e-6)
+        self.assertLessEqual(F,self.m.max_F)
+        self.assertLessEqual(abs(delta),self.m.max_delta)
+
+    def test_recovery_config_stays_within_torque_limit(self):
+        self.assertGreater(self.cfg['recovery_after_s'],0.0)
+        self.assertGreater(self.cfg['recovery_initial_force_N'],0.0)
+        self.assertLessEqual(self.cfg['recovery_max_force_N'],self.m.max_F)
+        self.assertGreater(self.cfg['recovery_ramp_N_per_s'],0.0)
+        self.assertGreater(self.cfg['recovery_horizon_s'],0.0)
+
     def test_bounded_commands(self):
         self.m.astar((-0.4,-2))
         for state in [Pose(-.4,-2,0,0),Pose(4.,-1.,.2,.4),Pose(16,.6,0,.2)]:

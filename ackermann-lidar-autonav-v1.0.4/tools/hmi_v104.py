@@ -614,7 +614,9 @@ class AckermannHMI(QMainWindow):
                                      self.node.scene_models.get(ROBOT_NAME)):
                 raise ValueError(
                     'Vật cản quá gần robot! Hãy đặt ngoài thân xe và vùng đệm.')
-            name=unique_obstacle_name(self.node.scene_models.keys())
+            bounding=size if shape=='cylinder' else math.sqrt(2.0)*size
+            name=unique_obstacle_name(self.node.scene_models.keys(),
+                                      bounding_radius_m=bounding)
             xml=obstacle_sdf(name,shape,size,height)
             z=ground_center_height(x,y,height,terrain,
                                      self.cfg['height_shift_gazebo_m'])
@@ -1411,6 +1413,12 @@ class AckermannHMI(QMainWindow):
             if not self.process.waitForFinished(850):
                 self.process.kill()
                 self.process.waitForFinished(350)
+        if (self.robot_spawn_process is not None and
+                self.robot_spawn_process.state()!=QProcess.NotRunning):
+            self.robot_spawn_process.terminate()
+            if not self.robot_spawn_process.waitForFinished(900):
+                self.robot_spawn_process.kill()
+                self.robot_spawn_process.waitForFinished(350)
         if self.node.manual_publisher is not None:
             self.node.send_manual(0.0,0.0)
             self.node.release_manual()

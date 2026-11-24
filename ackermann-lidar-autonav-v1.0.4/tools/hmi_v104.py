@@ -132,6 +132,7 @@ class AckermannHMI(QMainWindow):
         self.last_plot_wall=0.0
         self.last_compare_wall=0.0
         self.ros_errors=0
+        self._closing=False
         self._last_log=''
         self.setWindowTitle('ACKERMANN v1.0.4 | HMI — ROS 2 / Gazebo / MATLAB')
         self.resize(1400,900)
@@ -472,7 +473,8 @@ class AckermannHMI(QMainWindow):
 
     def eventFilter(self,obj,event):
         t=event.type()
-        if obj is self and t==QEvent.WindowDeactivate and self.mode=='MANUAL':
+        if (not self._closing and obj is self and
+                t==QEvent.WindowDeactivate and self.mode=='MANUAL'):
             # Clear held commands on focus loss; never drive in background.
             self._zero_command()
         if t not in (QEvent.KeyPress,QEvent.KeyRelease):
@@ -974,6 +976,7 @@ class AckermannHMI(QMainWindow):
         self._log('Ghi dữ liệu '+('BẬT' if self.recording else 'TẠM DỪNG'))
 
     def closeEvent(self,event):
+        self._closing=True
         self.spin_timer.stop();self.command_timer.stop()
         self.monitor_timer.stop();self.chart_timer.stop()
         if self.process is not None and self.process.state()!=QProcess.NotRunning:

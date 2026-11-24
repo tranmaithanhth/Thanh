@@ -96,6 +96,13 @@ class NearbyScene:
         current=sensed_models(names,poses,px,py,self.radius_m,
                               self.default_radius_m)
         self.visible=current
+        # Gazebo is the authority for model existence. If the operator
+        # deletes a previously observed object, forget it immediately; do
+        # NOT keep its old occupied cell for the 60 s memory horizon.
+        live_names=set(names)
+        for name in list(self._learned):
+            if name not in live_names:
+                del self._learned[name]
         for item in current:
             self._learned[item[0]]=(now,item)
         self.last_update_wall=now

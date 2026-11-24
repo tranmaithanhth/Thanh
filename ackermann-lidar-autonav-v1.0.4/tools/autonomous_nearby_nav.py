@@ -24,6 +24,7 @@ from autonomous_force_nav import ForceNavigator
 from local_planners_v104 import LocalPlanningMission, MODES
 from planner_core import terrain
 from nearby_scene import NearbyScene, nearest_clearance, stopping_distance
+from traction_recovery_v104 import DisplacementWatchdog
 
 SCENE_TOPIC='/gazebo/model_states'
 LOCAL_TOPIC='/ackermann_vehicle/nearby_obstacles'
@@ -58,11 +59,33 @@ class NearbyNavigator(ForceNavigator):
         self.local_recovery_since=None
         self.local_recovery_last_log=0.0
         self.local_recovery_attempts=0
+        # Ground-translation watchdog independent of noisy odom twist.
+        self.traction_watch=DisplacementWatchdog(
+            window_s=cfg.get('traction_window_s',1.6),
+            threshold_m=cfg.get('traction_min_xy_m',0.045),
+            speed_threshold_m_s=cfg.get('traction_min_vref_m_s',0.15))
+        self.last_traction_log=0.0
+        self.last_traction_floor=0.0
+        self.force_state_at=0.0
+        self.wheel_surface_speed=math.nan
+        self.create_subscription(
+            Float64MultiArray,'/ackermann_vehicle/force_state',
+            self.on_force_state,10)
         self.get_logger().info(
             '[NEARBY] simulator-only bounded neighborhood radius=%.1fm; '
             'no /scan subscription; no preloaded obstacle XY coordinates; '
             'A* global + %s local planner + [F,delta] command' %
             (self.scene.radius_m,self.mission.mode))
+
+    def on_force_state(self,msg):
+        # v1.0.3 physics plugin publishes RL/RR/FL/FR at [3,4,6,7].
+        # Magnitudes are used because the model's wheel-axis sign differs.
+        if len(msg.data)>=8:
+            values=[float(msg.data[i]) for i in (3,4,6,7)]
+            if all(math.isfinite(v) for v in values):
+                radius=float(self.cfg['wheel_radius_m'])
+                self.wheel_surface_speed=sum(abs(v) for v in values)*radius/4.0
+                self.force_state_at=time.monotonic()
 
     def on_scene(self,msg):
         if self.odom is None:
@@ -107,6 +130,15 @@ class NearbyNavigator(ForceNavigator):
         speed, subject to a bounded recovery deadline. Never enable a blind
         forward command or weaken obstacle inflation.
         """
+        if reason.startswith('STALL:') and self.traction_watch is not None:
+            # Enrich the terminal error with physically measured translation.
+            reason+=(
+                ' | XY_progress_speed=%.3fm/s odom=%.3fm/s '
+                'wheel_surface=%.3fm/s last_traction_floor=%.1fN' %
+                (self.traction_watch.xy_speed,
+                 self.current_pose().v if self.odom else math.nan,
+                 self.wheel_surface_speed,
+                 self.last_traction_floor))
         if (reason.startswith('NO SAFE LOCAL ROLLOUT') and
                 self.mission.mode in ('DWA','TEB') and self.odom is not None):
             now=time.monotonic()
@@ -160,6 +192,7 @@ class NearbyNavigator(ForceNavigator):
             route=self.mission.astar((pose.x,pose.y))
             self.route_time=now
             self.last_progress=(now,pose.x,pose.y)
+            self.traction_watch.reset()
             self.publish_route()
             self.get_logger().warn(
                 prefix+' '+str([(round(x,2),round(y,2)) for x,y in route]))
@@ -176,6 +209,7 @@ class NearbyNavigator(ForceNavigator):
             super().on_tick()
             return
         now=time.monotonic()
+        self.mission.traction_force_floor_N=0.0
         if now-self.start_wall>self.cfg['max_runtime_s']:
             self.finish('time limit reached')
             return
@@ -218,6 +252,7 @@ class NearbyNavigator(ForceNavigator):
             self.pending_replan=False
             self.last_progress=(now,pose.x,pose.y)
             self.route_time=now
+            self.traction_watch.reset()
 
         direction=1 if pose.v>=0 else -1
         if abs(pose.v)<0.08:
@@ -258,6 +293,57 @@ class NearbyNavigator(ForceNavigator):
                 (nearest,threshold,pose.v),now)
             return
 
+        # Independent real-world progress diagnosis: do not trust odom speed
+        # alone. Previous run reported v=0.12..0.18 m/s for 12 seconds
+        # while the rear axle stayed at (2.34, 1.75), F=15 N. Old hill
+        # assist skipped this case because grade ~0.04 < 0.06/0.10.
+        vref=self.mission.last_reference_v
+        eligible=(not self.dry_run and self.mission.mode in ('DWA','TEB')
+                  and not self.mission.no_safe_rollout
+                  and math.hypot(pose.x-self.mission.goal[0],
+                                 pose.y-self.mission.goal[1])>
+                      self.mission.goal_tolerance)
+        raw_floor=self.traction_watch.force_floor(
+            now,pose.x,pose.y,vref,enabled=eligible,
+            start_N=float(self.cfg.get('traction_start_force_N',65.)),
+            ramp_N_per_s=float(self.cfg.get('traction_ramp_N_per_s',22.)),
+            max_N=min(self.mission.max_F,float(
+                self.cfg.get('traction_max_force_N',145.))),
+            min_stall_s=float(self.cfg.get('traction_after_stall_s',.35)))
+        floor=raw_floor
+        wheel_recent=(now-self.force_state_at<1.5)
+        slip_suspected=(wheel_recent and
+            math.isfinite(self.traction_watch.xy_speed) and
+            self.traction_watch.xy_speed<
+                float(self.cfg.get('traction_low_xy_speed_m_s',.035))
+            and self.wheel_surface_speed>
+                float(self.cfg.get('traction_slip_wheel_speed_m_s',.65)))
+        if slip_suspected and floor:
+            # Raising torque without limit while wheels spin would not add
+            # contact traction. Keep a lower ceiling and diagnose separately.
+            floor=min(floor,float(
+                self.cfg.get('traction_slip_force_cap_N',75.)))
+        if floor>0:
+            # Verify the boosted *physical* force/steering against the known
+            # collision and grade map BEFORE allowing the local planner to
+            # consider it. The planner also verifies the full 2.5s rollout.
+            direction=1.0 if vref>0 else -1.0
+            if not self.mission.rollout_safe(
+                pose,direction*floor,self.mission.last_delta,
+                horizon_s=float(self.cfg.get('recovery_horizon_s',.45))):
+                floor=0.0
+        self.mission.traction_force_floor_N=floor
+        self.last_traction_floor=floor
+        if (floor>0 and now-self.last_traction_log>1.0):
+            self.last_traction_log=now
+            self.get_logger().warn(
+                '[XY TRACTION RECOVERY] F_floor=%.1fN '
+                'measured_XY_speed=%.3fm/s odom_v=%+.3fm/s '
+                'wheel_surface=%.3fm/s slope=%.3f '
+                'slip_possible=%s; obstacle guards ON' % (
+                    floor,self.traction_watch.xy_speed,pose.v,
+                    self.wheel_surface_speed,
+                    self.mission.grade_for_dynamics(pose),slip_suspected))
         super().on_tick()
         # Actual local trajectory selected by DWA/TEB; never confuse with A*.
         self.publish_local_path()

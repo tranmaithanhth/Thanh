@@ -17,14 +17,15 @@ import rclpy
 from rclpy.node import Node
 from nav_msgs.msg import Odometry, Path as RosPath
 from gazebo_msgs.msg import ModelStates
+from gazebo_msgs.srv import SpawnEntity, DeleteEntity
 from std_msgs.msg import Float64MultiArray
 
-from PyQt5.QtCore import QEvent, QProcess, QTimer, Qt
+from PyQt5.QtCore import QEvent, QProcess, QProcessEnvironment, QTimer, Qt
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QGridLayout, QGroupBox, QLabel, QPushButton, QDoubleSpinBox,
     QPlainTextEdit, QFileDialog, QMessageBox, QTabWidget, QSplitter,
-    QSlider, QScrollArea,
+    QSlider, QScrollArea, QComboBox, QListWidget, QAbstractItemView,
 )
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as Canvas
@@ -39,6 +40,11 @@ from hmi_data import (
 from hmi_manual_control import ManualDrive
 from nearby_scene import NearbyScene, nearest_clearance
 from planner_core import terrain
+from scene_editor_core import (
+    ROBOT_NAME, removable_models, unique_obstacle_name, validate_xy,
+    validate_obstacle, obstacle_sdf, ground_center_height,
+    conflicts_with_robot, conflicts_with_obstacles,
+)
 
 ROOT=Path(__file__).resolve().parents[1]
 CMD='/ackermann_vehicle/force_steer'
@@ -60,6 +66,7 @@ class TelemetryNode(Node):
         self.state=None
         self.route=None
         self.nearby=[]
+        self.scene_models={}
         self.odom_at=0.0
         self.state_at=0.0
         self.scene_at=0.0
@@ -69,6 +76,8 @@ class TelemetryNode(Node):
         self.create_subscription(RosPath,ROUTE,self._route,10)
         self.create_subscription(ModelStates,SCENE,self._scene,10)
         self.create_subscription(Float64MultiArray,NEARBY,self._nearby,10)
+        self.spawn_client=self.create_client(SpawnEntity,'/spawn_entity')
+        self.delete_client=self.create_client(DeleteEntity,'/delete_entity')
         self.manual_publisher=None
 
     def _odom(self,msg):
@@ -81,8 +90,12 @@ class TelemetryNode(Node):
         self.route=msg
 
     def _scene(self,msg):
-        # HMI needs only a scene heartbeat; the navigator alone extracts
-        # local objects for its A* map. Never render all world objects.
+        # Operator scenario editor knows all physical models, but the
+        # autonomous navigator STILL discovers only objects inside 4 m.
+        self.scene_models={
+            name:(float(pose.position.x),float(pose.position.y))
+            for name,pose in zip(msg.name,msg.pose)
+        }
         self.scene_at=time.monotonic()
 
     def _nearby(self,msg):
@@ -144,6 +157,10 @@ class AckermannHMI(QMainWindow):
         self.ros_errors=0
         self._closing=False
         self._last_log=''
+        self.scene_action=None
+        self.scene_delete_queue=[]
+        self.robot_spawn_process=None
+        self._scene_list_names=()
         self.setWindowTitle('ACKERMANN v1.0.4 | Nearby Gazebo / ROS 2 / MATLAB')
         self.resize(1400,900)
         self._build()
@@ -157,6 +174,7 @@ class AckermannHMI(QMainWindow):
         self.command_timer.start(100)
         self.monitor_timer=QTimer(self)
         self.monitor_timer.timeout.connect(self._update_monitor)
+        self.monitor_timer.timeout.connect(self._scene_tick)
         self.monitor_timer.start(100)
         self.chart_timer=QTimer(self)
         self.chart_timer.timeout.connect(self._draw_active_tab)
@@ -361,6 +379,7 @@ class AckermannHMI(QMainWindow):
         self.log_box.document().setMaximumBlockCount(450)
         ll.addWidget(self.log_box)
         self.tabs.addTab(logtab,'Nhật ký tự hành')
+        self._build_scene_editor()
         root.addWidget(self.tabs,stretch=1)
         self.compare_summary=QLabel('Chưa nạp dữ liệu MATLAB.')
         self.compare_summary.setWordWrap(True)

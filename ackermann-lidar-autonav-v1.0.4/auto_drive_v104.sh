@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start A* + LiDAR reactive safety + force-based local rollout.
+# Start bounded Gazebo nearby perception + unknown-obstacle A* + force local rollout.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WS="${ACKERMANN_WS:-$HOME/ackermann_humble_ws}"
@@ -13,5 +13,5 @@ set -eo pipefail
 source /opt/ros/humble/setup.bash
 source "$ACKERMANN_WS/install/setup.bash"
 set -u
-exec python3 "$V104_ROOT/tools/autonomous_lidar_nav.py" --config "$V104_ROOT/mission.json" "$@"
+exec python3 "$V104_ROOT/tools/autonomous_nearby_nav.py" --config "$V104_ROOT/mission.json" "$@"
 ' bash "$@"

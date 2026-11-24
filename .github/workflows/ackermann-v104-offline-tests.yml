@@ -1,0 +1,27 @@
+name: Ackermann LiDAR v1.0.4 offline tests
+
+on:
+  push:
+    paths:
+      - "ackermann-lidar-autonav-v1.0.4/**"
+      - ".github/workflows/ackermann-v104-offline-tests.yml"
+  workflow_dispatch:
+
+jobs:
+  no-ros-unit-tests:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Check Python syntax
+        run: python3 -m compileall -q ackermann-lidar-autonav-v1.0.4/tools ackermann-lidar-autonav-v1.0.4/tests
+      - name: Run LiDAR and route planner unit tests
+        run: python3 -m unittest discover -s ackermann-lidar-autonav-v1.0.4/tests -v
+      - name: Check Bash launch scripts
+        shell: bash
+        run: |
+          for f in ackermann-lidar-autonav-v1.0.4/*.sh; do
+            bash -n "$f"
+          done

@@ -51,6 +51,7 @@ CMD='/ackermann_vehicle/force_steer'
 ODOM='/ackermann_vehicle/odom'
 STATE='/ackermann_vehicle/force_state'
 ROUTE='/ackermann_vehicle/planned_path'
+LOCAL_PATH='/ackermann_vehicle/local_path'
 SCENE='/gazebo/model_states'
 NEARBY='/ackermann_vehicle/nearby_obstacles'
 
@@ -65,6 +66,8 @@ class TelemetryNode(Node):
         self.odom=None
         self.state=None
         self.route=None
+        self.local_route=None
+        self.local_route_at=0.
         self.nearby=[]
         self.scene_models={}
         self.odom_at=0.0
@@ -74,6 +77,7 @@ class TelemetryNode(Node):
         self.create_subscription(Odometry,ODOM,self._odom,10)
         self.create_subscription(Float64MultiArray,STATE,self._state,10)
         self.create_subscription(RosPath,ROUTE,self._route,10)
+        self.create_subscription(RosPath,LOCAL_PATH,self._local_route,10)
         self.create_subscription(ModelStates,SCENE,self._scene,10)
         self.create_subscription(Float64MultiArray,NEARBY,self._nearby,10)
         self.spawn_client=self.create_client(SpawnEntity,'/spawn_entity')
@@ -88,6 +92,10 @@ class TelemetryNode(Node):
 
     def _route(self,msg):
         self.route=msg
+
+    def _local_route(self,msg):
+        self.local_route=msg
+        self.local_route_at=time.monotonic()
 
     def _scene(self,msg):
         # Operator scenario editor knows all physical models, but the
@@ -213,6 +221,21 @@ class AckermannHMI(QMainWindow):
         self.btn_auto.clicked.connect(self._start_auto)
         row1.addWidget(self.btn_manual);row1.addWidget(self.btn_auto)
         cl.addLayout(row1)
+        planner_row=QHBoxLayout()
+        planner_row.addWidget(QLabel('Lập quỹ đạo cục bộ:'))
+        self.local_planner_combo=QComboBox()
+        self.local_planner_combo.addItem('DWA — cửa sổ động',userData='DWA')
+        self.local_planner_combo.addItem('TEB — dải đàn hồi thời gian',userData='TEB')
+        self.local_planner_combo.addItem('Rollout cũ — đối chứng',userData='ROLLOUT')
+        default=str(self.cfg.get('local_planner','DWA')).upper()
+        self.local_planner_combo.setCurrentIndex(
+            max(0,next((i for i in range(self.local_planner_combo.count())
+                        if self.local_planner_combo.itemData(i)==default),0)))
+        self.local_planner_combo.setToolTip(
+            'A* vẫn là đường toàn cục. DWA/TEB chỉ lập quỹ đạo cục bộ; '
+            'TEB là bản rút gọn theo MATLAB, không phải ROS teb_local_planner.')
+        planner_row.addWidget(self.local_planner_combo,stretch=1)
+        cl.addLayout(planner_row)
         row2=QHBoxLayout()
         self.btn_observe=QPushButton('Chỉ theo dõi')
         self.btn_observe.clicked.connect(self._observe)
@@ -724,6 +747,8 @@ class AckermannHMI(QMainWindow):
         self.node.odom_at=0.
         self.node.state=None
         self.node.route=None
+        self.node.local_route=None
+        self.node.local_route_at=0.
         self.node.nearby=[]
         self.node.nearby_at=0.
         self.last_nearby_points=[]
@@ -844,6 +869,7 @@ class AckermannHMI(QMainWindow):
         for b in self.pad_buttons.values():
             b.setEnabled(editing)
         self.btn_manual.setEnabled(not editing)
+        self.local_planner_combo.setEnabled(mode=='OBSERVE')
         self.btn_auto.setEnabled(mode not in ('AUTO','HANDOFF','STOPPING'))
         self.btn_observe.setEnabled(mode!='OBSERVE')
         self.mode_label.setStyleSheet(
@@ -1052,6 +1078,7 @@ class AckermannHMI(QMainWindow):
                 'Chưa thấy /gazebo/model_states. Cần khởi động lại world bằng run_world_v104.sh.')
             return
         program=str(ROOT/'auto_drive_v104.sh')
+        planner=self.local_planner_combo.currentData()
         self.process=QProcess(self)
         self.process.setProcessChannelMode(QProcess.MergedChannels)
         self.process.setWorkingDirectory(str(ROOT))
@@ -1059,14 +1086,14 @@ class AckermannHMI(QMainWindow):
         self.process.finished.connect(self._auto_finished)
         self.process.errorOccurred.connect(
             lambda e:self._log('Lỗi tiến trình tự hành: '+str(e)))
-        self.process.start('/bin/bash',[program])
+        self.process.start('/bin/bash',[program,'--local-planner',planner])
         if not self.process.waitForStarted(1200):
             self._set_mode('OBSERVE')
             self._log('Không mở được auto_drive_v104.sh: '+self.process.errorString())
             return
         self._set_mode('AUTO')
-        self._log('Đã mở bộ tự hành dùng dữ liệu vật cản 4 m từ Gazebo, '
-                  'KHÔNG sử dụng LiDAR hay vị trí vật cản biết trước.')
+        self._log(f'Đã mở A* toàn cục + {planner} cục bộ; vật cản phát hiện '
+                  'trong 4 m, KHÔNG dùng LiDAR hay tọa độ vật cản biết trước.')
 
     def _auto_output(self):
         if self.process is None:return
@@ -1265,7 +1292,15 @@ class AckermannHMI(QMainWindow):
             if path:
                 ax.plot([p.pose.position.x for p in path],
                         [p.pose.position.y for p in path],'--',
-                        color='#5c7f39',label='A*')
+                        color='#5c7f39',label='A* toàn cục')
+        if (self.node.local_route is not None and
+                time.monotonic()-self.node.local_route_at<2.5):
+            path=self.node.local_route.poses
+            if len(path)>1:
+                xy=[(p.pose.position.x,p.pose.position.y) for p in path]
+                ax.plot([p[0] for p in xy],[p[1] for p in xy],
+                        '-o',markersize=3,color='#b04fc1',linewidth=2,
+                        label='Quỹ đạo cục bộ DWA/TEB')
         for x,y,r in self.last_nearby_points:
             ax.add_patch(Circle((x,y),r,color='#d27c20',alpha=.30))
         if self.last_nearby_points:

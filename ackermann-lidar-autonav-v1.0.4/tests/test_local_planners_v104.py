@@ -84,6 +84,16 @@ class TestLocalPlanners(unittest.TestCase):
         self.assertTrue(math.isfinite(m._teb_cost(
             z,pose,end,7,(.5,.0))))
 
+    def test_teb_actually_optimizes_when_straight_route_is_feasible(self):
+        m=self.mission('TEB')
+        pose=Pose(0.,-2.,math.atan2(2.6,16.),.20)
+        guide=m.feedback(pose)
+        result=m._teb(pose,guide)
+        self.assertIsNotNone(result,'TEB should not always fall back to DWA')
+        self.assertEqual(len(result[5]),7)
+        self.assertTrue(math.isfinite(result[-1]))
+        self.assertTrue(m._teb_is_safe(pose,result[5]))
+
     def test_nearby_object_injected_by_detector_not_global_config(self):
         m=self.mission('DWA')
         route=list(m.path)

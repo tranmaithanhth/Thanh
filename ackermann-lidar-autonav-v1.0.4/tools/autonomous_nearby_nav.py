@@ -17,14 +17,18 @@ from pathlib import Path
 import rclpy
 from gazebo_msgs.msg import ModelStates
 from std_msgs.msg import Float64MultiArray
+from nav_msgs.msg import Path as RosPath
+from geometry_msgs.msg import PoseStamped
 
 from autonomous_force_nav import ForceNavigator
-from lidar_planner import DynamicMission
+from local_planners_v104 import LocalPlanningMission, MODES
+from planner_core import terrain
 from nearby_scene import NearbyScene, nearest_clearance, stopping_distance
 
 SCENE_TOPIC='/gazebo/model_states'
 LOCAL_TOPIC='/ackermann_vehicle/nearby_obstacles'
 CMD='/ackermann_vehicle/force_steer'
+LOCAL_PATH='/ackermann_vehicle/local_path'
 
 
 class NearbyNavigator(ForceNavigator):
@@ -33,7 +37,7 @@ class NearbyNavigator(ForceNavigator):
         cfg=dict(cfg)
         cfg['obstacles_xy_radius']=[]
         super().__init__(cfg, dry_run)
-        self.mission=DynamicMission(cfg)
+        self.mission=LocalPlanningMission(cfg)
         self.scene=NearbyScene(
             radius_m=cfg.get('nearby_radius_m',4.0),
             default_radius_m=cfg.get('nearby_obstacle_radius_m',0.75),
@@ -41,6 +45,9 @@ class NearbyNavigator(ForceNavigator):
         self.scene_sub=self.create_subscription(
             ModelStates,SCENE_TOPIC,self.on_scene,10)
         self.nearby_pub=self.create_publisher(Float64MultiArray,LOCAL_TOPIC,10)
+        self.local_path_pub=self.create_publisher(RosPath,LOCAL_PATH,10)
+        self.local_last_log=0.0
+        self.local_last_fallback=None
         self.last_scene_log=0.0
         self.last_brake_log=0.0
         self.last_replan=0.0
@@ -49,7 +56,8 @@ class NearbyNavigator(ForceNavigator):
         self.get_logger().info(
             '[NEARBY] simulator-only bounded neighborhood radius=%.1fm; '
             'no /scan subscription; no preloaded obstacle XY coordinates; '
-            'local A* + force/delta command' % self.scene.radius_m)
+            'A* global + %s local planner + [F,delta] command' %
+            (self.scene.radius_m,self.mission.mode))
 
     def on_scene(self,msg):
         if self.odom is None:
@@ -72,12 +80,28 @@ class NearbyNavigator(ForceNavigator):
                     [(name,round(x,2),round(y,2)) for name,x,y,r
                      in observed[:5]]))
 
+    def publish_local_path(self):
+        msg=RosPath()
+        msg.header.frame_id='world'
+        msg.header.stamp=self.get_clock().now().to_msg()
+        for x,y in self.mission.local_path:
+            pose=PoseStamped()
+            pose.header=msg.header
+            pose.pose.position.x=float(x)
+            pose.pose.position.y=float(y)
+            pose.pose.position.z=terrain(x,y)[0]+self.cfg['height_shift_gazebo_m']
+            pose.pose.orientation.w=1.0
+            msg.poses.append(pose)
+        self.local_path_pub.publish(msg)
+
     def braking_command(self,pose):
         if abs(pose.v)<0.045:return 0.0
         magnitude=min(self.mission.max_F,65.0+75.0*abs(pose.v))
         return -math.copysign(magnitude,pose.v)
 
     def hold(self,pose,reason,now):
+        self.mission.local_path=[]
+        self.publish_local_path()
         self.publish(self.braking_command(pose),0.0)
         if now-self.last_brake_log>1.0:
             self.last_brake_log=now
@@ -95,6 +119,8 @@ class NearbyNavigator(ForceNavigator):
             return True
         except (ValueError,RuntimeError) as exc:
             self.mission.path=[]
+            self.mission.local_path=[]
+            self.publish_local_path()
             self.hold(pose,'no safe local-map route: '+str(exc),now)
             return False
 
@@ -172,6 +198,19 @@ class NearbyNavigator(ForceNavigator):
             return
 
         super().on_tick()
+        # Actual local trajectory selected by DWA/TEB; never confuse with A*.
+        self.publish_local_path()
+        if now-self.local_last_log>=2.0 and not self.finished:
+            self.local_last_log=now
+            fallback=self.mission.fallback_active
+            if fallback!=self.local_last_fallback or now-self.last_scene_log<.25:
+                self.get_logger().info(
+                    '[LOCAL %s] predicted_points=%d cost=%.3f fallback=%s '
+                    'vref=%+.2f' % (
+                        self.mission.mode,len(self.mission.local_path),
+                        self.mission.local_cost,fallback,
+                        self.mission.last_reference_v))
+            self.local_last_fallback=fallback
 
 
 def main():
@@ -179,8 +218,12 @@ def main():
     ap.add_argument('--config',type=Path,required=True)
     ap.add_argument('--dry-run',action='store_true',
                     help='observe and plan only; publish NO motor commands')
+    ap.add_argument('--local-planner',choices=MODES,
+                    help='DWA, TEB or previous collision-checked ROLLOUT')
     args=ap.parse_args()
     cfg=json.loads(args.config.read_text(encoding='utf-8'))
+    if args.local_planner:
+        cfg['local_planner']=args.local_planner
     rclpy.init()
     node=NearbyNavigator(cfg,args.dry_run)
     try:

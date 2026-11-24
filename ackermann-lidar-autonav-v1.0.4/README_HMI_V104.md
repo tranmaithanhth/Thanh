@@ -1,6 +1,6 @@
 # HMI Ackermann v1.0.4 — Điều khiển, ghi đồ thị và đối chiếu MATLAB
 
-HMI được viết bằng **PyQt5 + Matplotlib + rclpy**, chạy riêng trên Ubuntu 22.04 với ROS 2 Humble và Gazebo Classic 11. Không thay đổi plugin lực C++ hoặc các world và không phụ thuộc camera.
+HMI được viết bằng **PyQt5 + Matplotlib + rclpy**, chạy riêng trên Ubuntu 22.04 với ROS 2 Humble và Gazebo Classic 11. Không thay đổi plugin lực C++, không dùng LiDAR và không phụ thuộc camera. World v1.0.4 phải được khởi động lại với plugin `gazebo_ros_state` (xem [README_NEARBY_V104.md](README_NEARBY_V104.md)).
 
 ## 1. Cài đặt
 
@@ -21,7 +21,7 @@ cd ~/ackermann_humble_ws/Thanh/ackermann-lidar-autonav-v1.0.4
 bash run_world_v104.sh
 ```
 
-**Terminal 2 — robot có LiDAR:**
+**Terminal 2 — robot KHÔNG có LiDAR:**
 
 ```bash
 cd ~/ackermann_humble_ws/Thanh/ackermann-lidar-autonav-v1.0.4
@@ -47,18 +47,18 @@ Cửa sổ HMI có khu vực điều khiển bên trái, bảng trạng thái RO
 - **Lái bằng bàn phím:** W/S/A/D hoặc ↑/↓/←/→ khi cửa sổ HMI đang được chọn; **SPACE** đưa lực và góc lái về 0 nhưng vẫn ở Manual. Mất focus cửa sổ sẽ đưa lệnh về 0. Tránh gõ lệnh khi con trỏ đang trong ô nhập số.
 - **Thí nghiệm với lệnh chính xác:** Chỉ sau khi bấm **GIỮ LỆNH SỐ**, giá trị F, δ trong hai ô mới được phát liên tục. Nút **VỀ 0** hủy lệnh giữ mà không tắt chế độ điều khiển. Dùng để tạo bước lực/góc lái khi so sánh với MATLAB.
 - **Chỉ theo dõi:** HMI **không tạo publisher** `/ackermann_vehicle/force_steer`; có thể mở để ghi log khi controller khác chạy trong terminal.
-- **Quyền phát lệnh:** HMI tạo đúng 1 publisher `std_msgs/Float64MultiArray`, phát `[F_N,delta_rad]` ở 10 Hz trong Manual. Lệnh được giới hạn ở ±300 N và ±29,8° (δ đổi sang radian). Khi odom/scan cũ hơn 1,2 s, HMI về 0 và yêu cầu nhấn lại; nếu phát hiện publisher thứ hai, HMI bỏ quyền lái và báo xung đột.
-- **Chạy tự hành A* + LiDAR:** HMI giải phóng publisher thủ công, kiểm tra không có controller khác, sau đó mở `auto_drive_v104.sh` trong tiến trình riêng. Nhận log tự hành hiển thị ngay trong tab Nhật ký.
+- **Quyền phát lệnh:** HMI tạo đúng 1 publisher `std_msgs/Float64MultiArray`, phát `[F_N,delta_rad]` ở 10 Hz trong Manual. Lệnh được giới hạn ở ±300 N và ±29,8° (δ đổi sang radian). Khi odometry cũ hơn 1,2 s, HMI về 0 và yêu cầu nhấn lại; nếu phát hiện publisher thứ hai, HMI bỏ quyền lái và báo xung đột.
+- **Chạy tự hành A* + quan sát vùng 4 m:** HMI giải phóng publisher thủ công, kiểm tra không có controller khác, sau đó mở `auto_drive_v104.sh` trong tiến trình riêng. Nhận log tự hành hiển thị ngay trong tab Nhật ký.
 - **DỪNG LỆNH:** Dừng tiến trình auto (nếu có), trả F=0, delta=0 và phát các lệnh zero ngắn hạn. **Đây KHÔNG phải phanh cơ khí, không giữ xe trên dốc.**
 - Không chạy `manual_drive_v104.sh` hoặc `auto_drive_v104.sh` trong terminal đồng thời với nút thủ công/tự hành trên HMI. Ngoại lệ: HMI ở chế độ **Chỉ theo dõi**, cho phép một controller khác phát lực.
 
-**Giám sát:** vị trí cầu sau `xP, yP`; cao độ mô hình; v; yaw/pitch/roll; lực phát động yêu cầu; góc lái tham chiếu/ước lượng từ plugin; mômen các bánh; tốc độ góc RL/RR/FL/FR; khoảng cách LiDAR trước/sau; độ dốc theo hướng xe từ heightmap; sai số bám quỹ đạo A*; sai số tới đích.
+**Giám sát:** vị trí cầu sau `xP, yP`; cao độ mô hình; v; yaw/pitch/roll; lực phát động yêu cầu; góc lái tham chiếu/ước lượng từ plugin; mômen các bánh; tốc độ góc RL/RR/FL/FR; khoảng hở vật cản trước/sau trong vùng quan sát; độ dốc theo hướng xe từ heightmap; sai số bám quỹ đạo A*; sai số tới đích.
 
 **Các tab:**
 1. Đồ thị thời gian thực: `v(t)`, `F_cmd(t)`, `delta_actual(t)`, `omega_wheel(t)`.
-2. Quỹ đạo XY + LiDAR: vệt chạy, tuyến A*, bốn trụ cố định, điểm vật cản mới LiDAR, đích và tường bao.
+2. Quỹ đạo XY + vật cản gần: vệt chạy, tuyến A*, chỉ những vật cản đã nằm trong bán kính quan sát 4 m, đích và tường bao; robot không được biết trước vị trí bốn trụ.
 3. Đối chiếu MATLAB: 7 đồ thị `xP,yP,v,yaw,delta,tau_total,F_cmd` vẽ chồng MATLAB/Gazebo, kèm RMSE và cảnh báo khi lệch điều kiện ban đầu/lệnh lực.
-4. Nhật ký tự hành: các log `[AUTO]`, `[LIDAR]`, `[LIDAR HOLD]`, `[LIDAR REPLAN]` từ tiến trình điều khiển.
+4. Nhật ký tự hành: các log `[AUTO]`, `[NEARBY]`, `[NEARBY HOLD]`, `[NEARBY REPLAN]` từ tiến trình điều khiển.
 
 Đồ thị được cập nhật định kỳ để giảm tải GUI, trong khi CSV giữ dữ liệu đã ghi với thời gian mô phỏng Gazebo. Tối đa 100.000 mẫu gần nhất để giới hạn bộ nhớ.
 
@@ -66,7 +66,7 @@ Cửa sổ HMI có khu vực điều khiển bên trái, bảng trạng thái RO
 
 Chương trình tự ghi từ khi nhận odometry. Nút `Xóa dữ liệu / Ghi mới` tạo phiên ghi mới; `Tạm dừng ghi` ngừng thêm mẫu nhưng không tắt ROS hoặc các lệnh điều khiển.
 
-- **Xuất CSV Gazebo:** file có các cột `t_s`, `sim_time_s`, `x_rear_m`, `y_rear_m`, `z_body_m`, `yaw_deg`, `pitch_deg`, `roll_deg`, `v_m_s`, `F_cmd_N`, `delta_ref_deg`, `delta_actual_deg`, `omega_*_rad_s`, `tau_*_Nm`, `tau_total_Nm`, `road_grade_deg`, `route_error_m`, các phép đo LiDAR.
+- **Xuất CSV Gazebo:** file có các cột `t_s`, `sim_time_s`, `x_rear_m`, `y_rear_m`, `z_body_m`, `yaw_deg`, `pitch_deg`, `roll_deg`, `v_m_s`, `F_cmd_N`, `delta_ref_deg`, `delta_actual_deg`, `omega_*_rad_s`, `tau_*_Nm`, `tau_total_Nm`, `road_grade_deg`, `route_error_m`, các trường `nearby_front_m`, `nearby_rear_m`, `nearby_age_s`, `nearby_count`.
 - **Xuất biểu đồ PNG:** lưu `gazebo_time_history.png` và `gazebo_trajectory.png`. Nếu đã nạp CSV MATLAB, thêm `matlab_gazebo_comparison.png`.
 - **Xuất CSV so sánh:** nội suy MATLAB theo timestamp Gazebo, tạo các cột `Gazebo_*`, `MATLAB_*`, `error_*` để dùng trong MATLAB, Excel hoặc báo cáo Word.
 
@@ -131,6 +131,6 @@ python3 -m unittest discover -s tests -v
 bash -n hmi_v104.sh auto_drive_v104.sh
 ```
 
-Nên mở HMI khi Gazebo và robot đã khởi động. Nếu nhấn Auto mà báo `/scan` không có, kiểm tra `scan_v104.sh` trước. Nếu HMI báo trùng publisher, đóng những chương trình manual/auto ở terminal khác rồi mới giành quyền điều khiển.
+Nên mở HMI khi Gazebo và robot đã khởi động. Nếu nhấn Auto mà báo thiếu `/gazebo/model_states`, cần đóng world cũ rồi khởi động lại bằng `run_world_v104.sh`; `scan_v104.sh` hiện là monitor lân cận, không còn đọc LiDAR. Nếu HMI báo trùng publisher, đóng những chương trình manual/auto ở terminal khác rồi mới giành quyền điều khiển.
 
-**Mức xác minh:** đã bổ sung các bài kiểm tra offline cho bảng lái, dữ liệu MATLAB và cấu hình bộ điều hướng; GitHub Actions sẽ chạy chúng khi CI được kích hoạt. Tương tác PyQt5 với ROS 2 Humble, Gazebo, cảm biến LiDAR và lực kéo vẫn cần kiểm tra trực tiếp trên Ubuntu.
+**Mức xác minh:** đã bổ sung các bài kiểm tra offline cho bảng lái, dữ liệu MATLAB và cấu hình bộ điều hướng; GitHub Actions sẽ chạy chúng khi CI được kích hoạt. Tương tác PyQt5 với ROS 2 Humble, Gazebo, publisher trạng thái mô hình và lực kéo vẫn cần kiểm tra trực tiếp trên Ubuntu.

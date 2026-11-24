@@ -44,8 +44,11 @@ class ScanMonitor(Node):
         yaw=yaw_from_quat(self.odom.pose.pose.orientation)
         rear_x=p.x-0.4*math.cos(yaw)
         rear_y=p.y-0.4*math.sin(yaw)
+        q=self.odom.pose.pose.orientation
+        model_pose=(p.x,p.y,p.z,q.x,q.y,q.z,q.w)
         if not self.layer.update(msg.ranges,msg.angle_min,msg.angle_increment,
-                                 msg.range_min,msg.range_max,rear_x,rear_y,yaw):
+                                 msg.range_min,msg.range_max,rear_x,rear_y,yaw,
+                                 model_pose=model_pose):
             self.get_logger().warn('Invalid /scan message')
             return
         if time.monotonic()-self.last_log>1.0:

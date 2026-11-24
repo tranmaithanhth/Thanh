@@ -117,8 +117,10 @@ def conflicts_with_robot(x,y,obstacle_size,robot_pose,clearance=0.45):
 def conflicts_with_obstacles(x,y,robot_radius,model_positions,
                              candidate_radius=0.75):
     """Prevent a robot from being respawned inside known scenario objects."""
+    from nearby_scene import model_collision_radius
     for name,ox,oy in model_positions:
         if not is_obstacle_name(name):continue
-        if math.hypot(float(x)-ox,float(y)-oy) <= robot_radius+candidate_radius:
+        actual_bound=model_collision_radius(name,candidate_radius)
+        if math.hypot(float(x)-ox,float(y)-oy) <= robot_radius+actual_bound:
             return True
     return False

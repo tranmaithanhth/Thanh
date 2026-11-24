@@ -124,7 +124,8 @@ class LocalPlanningMission(DynamicMission):
         # does not overcome static contact/rolling resistance in Gazebo.
         # The prediction uses this same floor so DWA rechecks collisions
         # at the higher acceleration, not blindly applying extra torque.
-        if abs(vref)>=0.14 and abs(pose.v)<0.36:
+        if (abs(vref)>=float(self.c.get('traction_dwa_min_moving_vref_m_s',0.035))
+                and abs(pose.v)<0.36):
             sign=1 if vref>0 else -1
             F=sign*max(sign*F,max(0.0,self.traction_force_floor_N))
         return clamp(F,-self.max_F,self.max_F)
@@ -166,6 +167,12 @@ class LocalPlanningMission(DynamicMission):
         vlo=max(0.,signed_v-amax*dt_control)
         vhi=min(speed_cap,max(0.,signed_v+amax*dt_control))
         if vlo>vhi:vlo=vhi
+        # When the measured robot is stalled, reference speeds <= 0.14m/s
+        # should not continually win on predicted endpoint cost. Preserve
+        # every candidate (including vref=0 for braking); just discourage
+        # nearly-zero motion when a safe forward option exists.
+        stalled_speed_target=min(
+            float(self.c.get('traction_dwa_progress_speed_m_s',0.11)),vhi)
         # MATLAB: six velocities plus zero, nine steering samples.
         vset=sorted(set([0.]+[round(v,5) for v in linspace(vlo,vhi,6)]))
         dlo=max(-self.max_delta,self.last_delta-steer_rate*dt_control)
@@ -202,6 +209,15 @@ class LocalPlanningMission(DynamicMission):
                       -1.1*progress)
                 if speed<0.02 and dist>self.goal_tolerance:
                     cost+=.6
+                if (self.traction_force_floor_N>0.01 and
+                        dist>self.goal_tolerance and
+                        stalled_speed_target>0.01):
+                    # Soft preference ONLY: unsafe trajectories remain
+                    # rejected above, so this cannot force an illegal move.
+                    fraction=clamp(speed/stalled_speed_target,0.,1.)
+                    cost+=float(self.c.get(
+                        'traction_dwa_low_speed_penalty',2.5))*(
+                            1.0-fraction)**2
                 if best is None or cost<best[0]:
                     best=(cost,vref,steer,states)
         if best is None:return None

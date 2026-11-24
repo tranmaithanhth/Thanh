@@ -91,6 +91,12 @@ class TestSceneEditor(unittest.TestCase):
             4.1,.3,1.05,[('obstacle_01',4.1,.3)]))
         self.assertFalse(conflicts_with_obstacles(
             -1.,-2.,1.05,[('obstacle_01',4.1,.3)]))
+        # A very large HMI box is assigned its true XY bounding radius;
+        # the robot must not be spawned in its collision footprint.
+        self.assertTrue(conflicts_with_obstacles(
+            0.,0.,1.05,[('hmi_obstacle_002_r354',3.,0.)]))
+        self.assertFalse(conflicts_with_obstacles(
+            0.,0.,1.05,[('hmi_obstacle_002_r354',10.,0.)]))
 
     def test_new_object_is_hidden_until_entering_local_sensor(self):
         model='hmi_obstacle_001_r120'

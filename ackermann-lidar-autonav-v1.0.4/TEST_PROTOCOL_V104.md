@@ -1,4 +1,16 @@
-# Quy trình kiểm tra tích hợp ROS 2 – Gazebo – LiDAR – HMI – MATLAB v1.0.4
+# Kiểm tra v1.0.4 — Chế độ cảm nhận vùng lân cận từ Gazebo
+
+> **Bản cập nhật 24/11/2026:** Chế độ hiện tại không dùng LiDAR,
+> không có `/scan`, không biết trước tọa độ bốn vật cản. Quy trình dưới
+> đây thuộc phiên bản trước; hãy theo
+> **[README_NEARBY_V104.md](README_NEARBY_V104.md)**
+> và chạy `python3 -m unittest discover -s tests -v`.
+> **Phải khởi động lại Gazebo** để world plugin phát
+> `/gazebo/model_states`.
+
+## Quy trình LiDAR cũ (chỉ dùng khi rollback)
+
+
 
 > Dự án nghiên cứu trong Gazebo Classic 11 / ROS 2 Humble. Chưa được xác minh
 > bằng thử nghiệm trực tiếp trên máy Ubuntu của người dùng. Không dùng làm hệ

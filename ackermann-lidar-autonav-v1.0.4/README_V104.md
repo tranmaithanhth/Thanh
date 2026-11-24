@@ -118,6 +118,49 @@ ma sát/tiếp xúc hoặc góc khởi đầu. Đối chiếu thêm `/force_stee
 `lidar_ground_tolerance_m`, bản đồ địa hình sai và vật cản nhỏ có thể
 không được nhận diện. Chưa đủ an toàn để sử dụng ngoài mô phỏng.
 
+### Bản sửa tiếp theo: điểm LiDAR màu cam sát robot tại X≈2,8; Y≈−2
+
+Ảnh HMI sau bản vá đầu tiên cho thấy một điểm cam nằm gần như **sát
+thân/bánh sau** khi robot đi tới vùng X≈3 m. Đây không đủ dữ liệu để
+khẳng định là dốc; rất có thể là tín hiệu LiDAR phản xạ từ **chính
+chassis hoặc bánh xe**. Các bản vá đầu tiên chỉ xử lý độ cao địa hình,
+chưa loại phản xạ nằm trong hình chiếu thân xe.
+
+Bộ lọc mới trong `tools/lidar_obstacles.py` gồm hai nhánh:
+- **Loại tự phản xạ:** đưa mỗi điểm LiDAR về tọa độ tương đối của thân
+  xe (dùng hướng yaw và vị trí thân từ odometry); loại điểm nằm bên
+  trong footprint gần `x∈[-0.64,0.67]` m, `|y|≤0.43` m. Vùng này
+  không phải bán kính tránh va chạm 1,2 m của A*; **vật thật ở trước
+  cản/ngoài footprint vẫn phải phát hiện và phanh**.
+- **Đối chiếu ray–địa hình:** đối với điểm không bị loại nhưng nằm
+  **chỉ hơi cao hơn địa hình dự đoán**, kiểm tra giao điểm của toàn
+  bộ tia 3D với mặt độ cao MATLAB; nếu khoảng cách giao nằm cách số
+  đo LiDAR không quá 0,20 m thì phân loại là mặt dốc. Tia quét có
+  điểm nằm cao hẳn so với địa hình không được loại bởi nhánh này.
+
+`mission.json` có các tham số `lidar_self_x_back_m`,
+`lidar_self_x_front_m`, `lidar_self_half_width_m`,
+`lidar_ground_raycast_tolerance_m` và
+`lidar_ground_raycast_height_gate_m`. Không tăng vùng loại self tùy
+tiện: vùng quá lớn có thể làm mất vật cản thật.
+
+HMI hiển thị `LiDAR: đất / tự thân / vật mới`; log tự hành có
+`ground=...`, `ray_ground=...`, `self=...`, `dynamic=...`.
+Chỉ tính `nearest(front/rear)` sau khi bỏ điểm địa hình và tự
+phản xạ, tránh phanh giả.
+
+**Hướng dẫn áp dụng:** dừng tự hành và thoát HMI, `git pull`, chạy
+`python3 -m unittest discover -s tests -v`, rồi mở lại HMI và bộ
+điều khiển. Không cần spawn lại robot vì các thay đổi chỉ liên quan
+đến Python và JSON. Nếu xe vẫn đứng, gửi log `[LIDAR HOLD]`,
+`[LIDAR]`, `[AUTO]` và `/ackermann_vehicle/force_state` để
+phân biệt phanh giả với lỗi lực kéo/khả năng bám địa hình.
+
+**Hạn chế:** Giải pháp dùng bản đồ địa hình có sẵn và một vùng mask
+vật lý ước tính; không phải mô hình tự nhận biết chướng ngại 3D độc
+lập, không đảm bảo phát hiện vật thể thấp hay sát thân. Chỉ dùng
+trong mô phỏng, không dùng làm cảm biến an toàn cho robot thực tế.
+
 ## 4. Kiểm tra phát hiện vật cản mới
 
 Khi Gazebo đang chạy, bạn có thể dùng chức năng Insert của Gazebo để thêm hộp mới vào trước robot. Hoặc tạo hộp tĩnh màu cam trên đường đi ngay khi robot đang di chuyển:

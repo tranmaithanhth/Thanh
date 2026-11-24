@@ -17,6 +17,18 @@ def norm_angle(a):
 def finite_return(value, minimum, maximum):
     return math.isfinite(value) and minimum <= value < maximum - 1e-3
 
+def is_terrain_return(hit_z, ground_z, tolerance):
+    """Reject a return at/below the predicted map surface.
+
+    A collision heightmap and odom-projected scan endpoints can disagree by
+    >0.20m on ramps. A point BELOW the known terrain is not evidence of an
+    above-ground obstacle. A positive margin still hides very low objects;
+    a 2D scan cannot distinguish all ground contacts reliably.
+    """
+    return (math.isfinite(hit_z) and math.isfinite(ground_z) and
+            hit_z <= ground_z + max(0.0, float(tolerance)))
+
+
 def rotate_quaternion(q, v):
     """Rotate local xyz by quaternion (x,y,z,w); caller supplies a unit q."""
     qx,qy,qz,qw=q
@@ -46,6 +58,9 @@ class LidarObstacleLayer:
         self.last_scan_wall = None
         self._last_points = []
         self._last_direction_ranges = {1: math.inf, -1: math.inf}
+        self.last_filter_stats = {
+            'valid':0, 'terrain':0, 'below_map':0,
+            'known_static':0, 'dynamic':0}
         if self.voxel_m <= 0 or self.max_points < 1 or self.ttl_s <= 0:
             raise ValueError('Invalid LiDAR voxel size, point count, or time-to-live')
 
@@ -79,11 +94,14 @@ class LidarObstacleLayer:
                 (self.model_to_lidar_x,0.0,self.model_to_lidar_z))
             ox,oy,sz=mx+dx,my+dy,mz+dz
         bins={}
+        stats={'valid':0,'terrain':0,'below_map':0,
+               'known_static':0,'dynamic':0}
         direction_ranges={1:math.inf,-1:math.inf}
         for i,raw in enumerate(ranges):
             try:d=float(raw)
             except (TypeError,ValueError):continue
             if not finite_return(d,minimum,maximum):continue
+            stats['valid']+=1
             a=norm_angle(angle_min+i*angle_increment)
             # Account for full chassis roll/pitch on steep terrain, otherwise
             # sloped ground can appear as a fake dynamic obstacle.
@@ -92,9 +110,13 @@ class LidarObstacleLayer:
                 x=ox+d*vx;y=oy+d*vy
                 hit_z=sz+d*vz
                 ground=terrain(x,y)[0]+self.ground_z_shift
-                # A beam endpoint on the KNOWN heightmap is terrain, not an
-                # obstacle. Only reject near-ground returns, not raised boxes.
-                if ground-0.20<=hit_z<=ground+self.ground_tolerance:
+                # Ray hits BELOW the modeled ramp are not vertical obstacles.
+                # A fixed lower cutoff (ground-0.20) previously mislabelled
+                # an entire x≈5m contour as a dynamic wall in v1.0.4.
+                if is_terrain_return(hit_z, ground, self.ground_tolerance):
+                    stats['terrain']+=1
+                    if hit_z < ground-0.20:
+                        stats['below_map']+=1
                     continue
             else:
                 x=ox+d*math.cos(yaw+a);y=oy+d*math.sin(yaw+a)
@@ -106,6 +128,7 @@ class LidarObstacleLayer:
             # Filtering their returns avoids repeatedly rerouting for them.
             if any(math.hypot(x-cx,y-cy)<=rad+self.ignore_static_extra
                    for cx,cy,rad in self.known):
+                stats['known_static']+=1
                 continue
             # Only retain hits inside the known heightmap bounds.
             bx=self.cfg.get('world_bounds_xy',[-20,20,-20,20])
@@ -117,6 +140,8 @@ class LidarObstacleLayer:
         self._last_points=[(x,y) for d,x,y in
                             sorted(bins.values(),key=lambda item:item[0])[:self.max_points]]
         self._last_direction_ranges=direction_ranges
+        stats['dynamic']=len(self._last_points)
+        self.last_filter_stats=stats
         return True
 
     def age(self,now=None):

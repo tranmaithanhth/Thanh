@@ -16,7 +16,7 @@ from pathlib import Path
 
 import rclpy
 from gazebo_msgs.msg import ModelStates
-from std_msgs.msg import Float64MultiArray
+from std_msgs.msg import Float64MultiArray, String
 from nav_msgs.msg import Path as RosPath
 from geometry_msgs.msg import PoseStamped
 
@@ -29,6 +29,7 @@ SCENE_TOPIC='/gazebo/model_states'
 LOCAL_TOPIC='/ackermann_vehicle/nearby_obstacles'
 CMD='/ackermann_vehicle/force_steer'
 LOCAL_PATH='/ackermann_vehicle/local_path'
+LOCAL_STATUS='/ackermann_vehicle/local_planner_status'
 
 
 class NearbyNavigator(ForceNavigator):
@@ -46,6 +47,7 @@ class NearbyNavigator(ForceNavigator):
             ModelStates,SCENE_TOPIC,self.on_scene,10)
         self.nearby_pub=self.create_publisher(Float64MultiArray,LOCAL_TOPIC,10)
         self.local_path_pub=self.create_publisher(RosPath,LOCAL_PATH,10)
+        self.local_status_pub=self.create_publisher(String,LOCAL_STATUS,10)
         self.local_last_log=0.0
         self.local_last_fallback=None
         self.last_scene_log=0.0
@@ -259,6 +261,16 @@ class NearbyNavigator(ForceNavigator):
         super().on_tick()
         # Actual local trajectory selected by DWA/TEB; never confuse with A*.
         self.publish_local_path()
+        msg=String()
+        msg.data=json.dumps({
+            'requested':self.mission.mode,
+            'effective':self.mission.last_solver,
+            'dwa_valid':self.mission.last_dwa_valid_candidates,
+            'dwa_tested':self.mission.last_dwa_tested_candidates,
+            'fallback':self.mission.fallback_active,
+            'no_safe':self.mission.no_safe_rollout,
+        })
+        self.local_status_pub.publish(msg)
         if (not self.mission.no_safe_rollout and not self.finished and
                 self.local_recovery_since is not None):
             self.get_logger().info(

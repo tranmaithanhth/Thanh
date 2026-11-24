@@ -6,6 +6,7 @@ import math
 import time
 
 import rclpy
+from rclpy.qos import qos_profile_sensor_data
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import LaserScan
 from rclpy.node import Node
@@ -26,7 +27,7 @@ class ScanMonitor(Node):
         self.count=0
         self.last_log=0.0
         self.create_subscription(Odometry,'/ackermann_vehicle/odom',self.on_odom,10)
-        self.create_subscription(LaserScan,'/scan',self.on_scan,10)
+        self.create_subscription(LaserScan,'/scan',self.on_scan,qos_profile_sensor_data)
         self.get_logger().info('[SCAN MONITOR] Listening /scan + /ackermann_vehicle/odom. NO motor publisher.')
 
     def on_odom(self,msg):

@@ -49,9 +49,12 @@ class LidarNavigator(ForceNavigator):
             p.x,p.y,p.yaw,model_pose=model_pose)
         if success and time.monotonic()-self.lidar_last_scan_report>=4.0:
             self.lidar_last_scan_report=time.monotonic()
+            stats=self.layer.last_filter_stats
             self.get_logger().info(
                 f'[LIDAR] scan OK: beams={len(msg.ranges)}, '
-                f'new map points={len(self.layer.world_points())}, '
+                f'valid={stats["valid"]}, ground={stats["terrain"]}, '
+                f'below_map={stats["below_map"]}, static={stats["known_static"]}, '
+                f'dynamic={stats["dynamic"]}, '
                 f'front={self.layer.nearest(1):.2f}m, '
                 f'rear={self.layer.nearest(-1):.2f}m')
 

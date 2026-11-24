@@ -22,6 +22,18 @@ Phát hiện vật cản dựa trên **tâm mô hình** và bán kính bao tròn
 mô hình mới quá lớn hoặc có hình dạng dài cần kiểm tra/sửa giá trị này trước
 khi kết luận an toàn. Không biết hình dạng chính xác, không có occlusion.
 
+## Quản lý mô phỏng từ HMI
+
+Từ bản cập nhật mới, HMI có thêm tab **Quản lý mô phỏng** để xóa/spawn
+robot ở X–Y–yaw tự chọn, và tạo/xóa hình trụ hoặc hình hộp có collision
+thật tại bất kỳ vị trí hợp lệ trên terrain. Có thể nhấp trực tiếp lên
+bản đồ XY để điền tọa độ. Bốn vật cản gốc có thể xóa, hoặc xóa tất cả
+vật cản mà không xóa terrain/tường/đích. Robot giới hạn **một robot
+đang chạy**, phải dừng controller trước khi xóa hoặc tạo lại.
+
+**Hướng dẫn thao tác, giới hạn và kiểm thử:**
+[README_SCENE_EDITOR_V104.md](README_SCENE_EDITOR_V104.md).
+
 ## Thay đổi các file chính
 
 - `tools/prepare_proximity_world.py`: thêm world plugin

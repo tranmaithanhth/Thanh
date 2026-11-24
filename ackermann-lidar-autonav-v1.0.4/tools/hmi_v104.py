@@ -15,9 +15,8 @@ from pathlib import Path
 
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
 from nav_msgs.msg import Odometry, Path as RosPath
-from sensor_msgs.msg import LaserScan
+from gazebo_msgs.msg import ModelStates
 from std_msgs.msg import Float64MultiArray
 
 from PyQt5.QtCore import QEvent, QProcess, QTimer, Qt
@@ -38,7 +37,7 @@ from hmi_data import (
     distance_to_path,
 )
 from hmi_manual_control import ManualDrive
-from lidar_obstacles import LidarObstacleLayer
+from nearby_scene import NearbyScene, nearest_clearance
 from planner_core import terrain
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -46,7 +45,8 @@ CMD='/ackermann_vehicle/force_steer'
 ODOM='/ackermann_vehicle/odom'
 STATE='/ackermann_vehicle/force_state'
 ROUTE='/ackermann_vehicle/planned_path'
-SCAN='/scan'
+SCENE='/gazebo/model_states'
+NEARBY='/ackermann_vehicle/nearby_obstacles'
 
 
 def text_number(n,fmt='.2f'):
@@ -59,14 +59,16 @@ class TelemetryNode(Node):
         self.odom=None
         self.state=None
         self.route=None
-        self.scan=None
+        self.nearby=[]
         self.odom_at=0.0
         self.state_at=0.0
-        self.scan_at=0.0
+        self.scene_at=0.0
+        self.nearby_at=0.0
         self.create_subscription(Odometry,ODOM,self._odom,10)
         self.create_subscription(Float64MultiArray,STATE,self._state,10)
         self.create_subscription(RosPath,ROUTE,self._route,10)
-        self.create_subscription(LaserScan,SCAN,self._scan,qos_profile_sensor_data)
+        self.create_subscription(ModelStates,SCENE,self._scene,10)
+        self.create_subscription(Float64MultiArray,NEARBY,self._nearby,10)
         self.manual_publisher=None
 
     def _odom(self,msg):
@@ -78,8 +80,18 @@ class TelemetryNode(Node):
     def _route(self,msg):
         self.route=msg
 
-    def _scan(self,msg):
-        self.scan=msg;self.scan_at=time.monotonic()
+    def _scene(self,msg):
+        # HMI needs only a scene heartbeat; the navigator alone extracts
+        # local objects for its A* map. Never render all world objects.
+        self.scene_at=time.monotonic()
+
+    def _nearby(self,msg):
+        try:
+            self.nearby=NearbyScene.unpack_packet(msg.data)
+            self.nearby_at=time.monotonic()
+        except ValueError:
+            self.nearby=[]
+            self.nearby_at=0.0
 
     def start_manual(self):
         if self.manual_publisher is None:
@@ -113,13 +125,11 @@ class AckermannHMI(QMainWindow):
         super().__init__()
         self.cfg=json.loads((ROOT/'mission.json').read_text(encoding='utf-8'))
         self.node=TelemetryNode()
-        self.layer=LidarObstacleLayer(self.cfg)
         self.samples=[]
         self.reference=[]
         self.session_zero=None
         self.last_sample_stamp=None
-        self.last_scan_stamp=0.0
-        self.last_lidar_points=[]
+        self.last_nearby_points=[]
         self.recording=True
         self.mode='OBSERVE'
         self.pad=ManualDrive(float(self.cfg['max_drive_force_N']),
@@ -134,7 +144,7 @@ class AckermannHMI(QMainWindow):
         self.ros_errors=0
         self._closing=False
         self._last_log=''
-        self.setWindowTitle('ACKERMANN v1.0.4 | HMI — ROS 2 / Gazebo / MATLAB')
+        self.setWindowTitle('ACKERMANN v1.0.4 | Nearby Gazebo / ROS 2 / MATLAB')
         self.resize(1400,900)
         self._build()
         self._style()
@@ -162,12 +172,12 @@ class AckermannHMI(QMainWindow):
         root.setSpacing(9)
 
         header=QHBoxLayout()
-        head=QLabel('ACKERMANN  /  FORCE + LiDAR  /  v1.0.4')
+        head=QLabel('ACKERMANN  /  FORCE + GAZEBO NEARBY  /  v1.0.4')
         head.setObjectName('header')
         header.addWidget(head,stretch=1)
         self.mode_label=QLabel('OBSERVE')
         self.odom_health=QLabel('ODOM —')
-        self.scan_health=QLabel('LiDAR —')
+        self.scan_health=QLabel('Môi trường —')
         for el in (self.mode_label,self.odom_health,self.scan_health):
             el.setObjectName('statusPill')
             header.addWidget(el)
@@ -180,7 +190,7 @@ class AckermannHMI(QMainWindow):
         row1=QHBoxLayout()
         self.btn_manual=QPushButton('Điều khiển thủ công')
         self.btn_manual.clicked.connect(self._start_manual)
-        self.btn_auto=QPushButton('Chạy tự hành A* + LiDAR')
+        self.btn_auto=QPushButton('Tự hành A* + cảm biến vùng')
         self.btn_auto.setObjectName('autoButton')
         self.btn_auto.clicked.connect(self._start_auto)
         row1.addWidget(self.btn_manual);row1.addWidget(self.btn_auto)
@@ -315,8 +325,8 @@ class AckermannHMI(QMainWindow):
             ('steer','Góc lái ref / thực (°)'),
             ('torque','Mômen tổng (Nm)'),
             ('wheel','Tốc độ bánh RL/RR/FL/FR'),
-            ('lidar','Khoảng cách LiDAR trước/sau'),
-            ('lidar_filter','LiDAR: đất / tự thân / vật mới'),
+            ('nearby','Khoảng hở trước/sau (m)'),
+            ('nearby_count','Vật cản đang quan sát (trong 4 m)'),
             ('goal','Sai số vị trí đích (m)'),
             ('route','Lệch quỹ đạo A* (m)'),
             ('grade','Dốc dọc theo hướng xe (°)'),
@@ -342,7 +352,7 @@ class AckermannHMI(QMainWindow):
         self.map_panel=PlotPanel(1,1)
         self.compare_panel=PlotPanel(4,2)
         self.tabs.addTab(self.live_panel,'Đồ thị thời gian thực')
-        self.tabs.addTab(self.map_panel,'Quỹ đạo XY + LiDAR')
+        self.tabs.addTab(self.map_panel,'Quỹ đạo XY + vật cản gần')
         self.tabs.addTab(self.compare_panel,'Đối chiếu MATLAB')
         logtab=QWidget()
         ll=QVBoxLayout(logtab)
@@ -443,9 +453,9 @@ class AckermannHMI(QMainWindow):
     def _pad_press(self,direction):
         if self.mode!='MANUAL':
             return
-        if (time.monotonic()-self.node.odom_at>1.2 or
-            time.monotonic()-self.node.scan_at>1.2):
-            self._log('Không điều khiển: ODOM hoặc LiDAR đã quá hạn.')
+        if time.monotonic()-self.node.odom_at>1.2:
+            self._log('Không điều khiển: thiếu odometry mới.')
+
             return
         self.pad.press(direction)
         self._show_manual_command()
@@ -457,9 +467,9 @@ class AckermannHMI(QMainWindow):
     def _apply_exact(self):
         if self.mode!='MANUAL':
             return
-        if (time.monotonic()-self.node.odom_at>1.2 or
-            time.monotonic()-self.node.scan_at>1.2):
-            self._log('Không áp dụng lệnh số: thiếu ODOM/LiDAR mới.')
+        if time.monotonic()-self.node.odom_at>1.2:
+            self._log('Không áp dụng lệnh số: thiếu odometry mới.')
+
             return
         self.pad.latch_numeric(self.force_edit.value(),self.steer_edit.value())
         self._show_manual_command()
@@ -541,8 +551,7 @@ class AckermannHMI(QMainWindow):
 
     def _send_command(self):
         if self.mode=='MANUAL':
-            if (time.monotonic()-self.node.odom_at>1.2 or
-                time.monotonic()-self.node.scan_at>1.2):
+            if time.monotonic()-self.node.odom_at>1.2:
                 # Require a new key/button press after telemetry recovers.
                 self._zero_command()
                 return
@@ -588,9 +597,6 @@ class AckermannHMI(QMainWindow):
         if time.monotonic()-self.node.odom_at>1.2:
             QMessageBox.warning(self,'Gazebo','Chưa có odometry mới từ robot.')
             return
-        if time.monotonic()-self.node.scan_at>1.2:
-            QMessageBox.warning(self,'LiDAR','Chưa nhận /scan mới từ robot.')
-            return
         self._zero_command()
         self.force_edit.setValue(0.0)
         self.steer_edit.setValue(0.0)
@@ -620,10 +626,10 @@ class AckermannHMI(QMainWindow):
             QMessageBox.warning(self,'Đang có controller khác',
                 'Có publisher /force_steer khác. Đóng terminal điều khiển cũ.')
             return
-        if time.monotonic()-self.node.scan_at>1.2:
+        if time.monotonic()-self.node.scene_at>1.3:
             self._set_mode('OBSERVE')
-            QMessageBox.warning(self,'Thiếu LiDAR',
-                'Chưa thấy /scan. Kiểm tra v1.0.4 spawn robot có LiDAR.')
+            QMessageBox.warning(self,'Thiếu dữ liệu Gazebo',
+                'Chưa thấy /gazebo/model_states. Cần khởi động lại world bằng run_world_v104.sh.')
             return
         program=str(ROOT/'auto_drive_v104.sh')
         self.process=QProcess(self)
@@ -639,8 +645,8 @@ class AckermannHMI(QMainWindow):
             self._log('Không mở được auto_drive_v104.sh: '+self.process.errorString())
             return
         self._set_mode('AUTO')
-        self._log('Đã mở bộ tự hành LiDAR trong tiến trình riêng, '
-                  'HMI không phát thêm force_steer.')
+        self._log('Đã mở bộ tự hành dùng dữ liệu vật cản 4 m từ Gazebo, '
+                  'KHÔNG sử dụng LiDAR hay vị trí vật cản biết trước.')
 
     def _auto_output(self):
         if self.process is None:return
@@ -680,29 +686,13 @@ class AckermannHMI(QMainWindow):
         self._log('DỪNG LỆNH: đã gửi F=0 và delta=0 trong khoảng 0.9 s. '
                   'KHÔNG phải phanh cơ khí/giữ xe trên dốc.')
 
-    def _update_lidar(self):
-        scan=self.node.scan
-        if scan is None:return
-        stamp=(scan.header.stamp.sec+
-               scan.header.stamp.nanosec*1e-9)
-        if stamp==self.last_scan_stamp:
-            # Drop orange map points when /scan stops: do not indefinitely
-            # display an old echo as if it were a live obstacle.
-            self.last_lidar_points=self.layer.world_points()
-            return
-        self.last_scan_stamp=stamp
-        odom=self.node.odom
-        if odom is None:return
-        p=odom.pose.pose.position
-        q=odom.pose.pose.orientation
-        _,_,yaw=quaternion_rpy(q.x,q.y,q.z,q.w)
-        back=float(self.cfg['rear_axle_offset_from_model_origin_m'])
-        self.layer.update(
-            scan.ranges,scan.angle_min,scan.angle_increment,
-            scan.range_min,scan.range_max,
-            p.x-back*math.cos(yaw),p.y-back*math.sin(yaw),
-            yaw,model_pose=(p.x,p.y,p.z,q.x,q.y,q.z,q.w))
-        self.last_lidar_points=self.layer.world_points()
+    def _update_nearby(self):
+        # Only the navigator's bounded observations are displayed; do not
+        # subscribe to all model poses for map construction in the HMI.
+        if time.monotonic()-self.node.nearby_at>1.3:
+            self.last_nearby_points=[]
+        else:
+            self.last_nearby_points=list(self.node.nearby)
 
     def _make_row(self):
         odom=self.node.odom
@@ -739,10 +729,16 @@ class AckermannHMI(QMainWindow):
             'goal_error_m':math.hypot(x-goal[0],y-goal[1]),
             'route_error_m':distance_to_path(x,y,route_points),
             'road_grade_deg':math.degrees(math.atan(longitudinal_grade)),
-            'lidar_front_m':self.layer.nearest(1),
-            'lidar_rear_m':self.layer.nearest(-1),
-            'lidar_age_s':self.layer.age(),
-            'lidar_beams':len(self.node.scan.ranges) if self.node.scan else 0,
+            'nearby_front_m':nearest_clearance(
+                [('seen',*v) for v in self.last_nearby_points],
+                x,y,yaw,1),
+            'nearby_rear_m':nearest_clearance(
+                [('seen',*v) for v in self.last_nearby_points],
+                x,y,yaw,-1),
+            'nearby_age_s':(
+                time.monotonic()-self.node.nearby_at
+                if self.node.nearby_at>0 else math.nan),
+            'nearby_count':len(self.last_nearby_points),
             'mode':self.mode,
         }
         if (self.node.state is not None and
@@ -758,12 +754,12 @@ class AckermannHMI(QMainWindow):
         return row
 
     def _update_monitor(self):
-        self._update_lidar()
+        self._update_nearby()
         now=time.monotonic()
         good_odom=now-self.node.odom_at<1.2
-        good_scan=now-self.node.scan_at<1.2
+        good_scan=now-self.node.scene_at<1.3
         self.odom_health.setText('ODOM ●' if good_odom else 'ODOM —')
-        self.scan_health.setText('LiDAR ●' if good_scan else 'LiDAR —')
+        self.scan_health.setText('Môi trường ●' if good_scan else 'Môi trường —')
         self.odom_health.setStyleSheet('color:#176a48;' if good_odom else 'color:#a42e30;')
         self.scan_health.setStyleSheet('color:#176a48;' if good_scan else 'color:#a42e30;')
         if not good_odom:return
@@ -787,11 +783,10 @@ class AckermannHMI(QMainWindow):
         wh=[row.get(k,math.nan) for k in
             ('omega_rl_rad_s','omega_rr_rad_s','omega_fl_rad_s','omega_fr_rad_s')]
         self.metrics['wheel'].setText(' / '.join(text_number(v,'+.2f') for v in wh)+' rad/s')
-        self.metrics['lidar'].setText(
-            text_number(row['lidar_front_m'])+' / '+text_number(row['lidar_rear_m'])+' m')
-        stats=self.layer.last_filter_stats
-        self.metrics['lidar_filter'].setText(
-            f"{stats['terrain']} / {stats['self']} / {stats['dynamic']}")
+        self.metrics['nearby'].setText(
+            text_number(row['nearby_front_m'])+' / '+
+            text_number(row['nearby_rear_m'])+' m')
+        self.metrics['nearby_count'].setText(str(row['nearby_count']))
         self.metrics['goal'].setText(text_number(row['goal_error_m']))
         self.metrics['route'].setText(text_number(row['route_error_m']))
         self.metrics['grade'].setText(text_number(row['road_grade_deg'],'+.2f'))
@@ -851,12 +846,18 @@ class AckermannHMI(QMainWindow):
                 ax.plot([p.pose.position.x for p in path],
                         [p.pose.position.y for p in path],'--',
                         color='#5c7f39',label='A*')
-        for x,y,r in self.cfg['obstacles_xy_radius']:
-            ax.add_patch(Circle((x,y),r,color='#b84f47',alpha=.25))
-        if self.last_lidar_points:
-            ax.scatter([p[0] for p in self.last_lidar_points],
-                       [p[1] for p in self.last_lidar_points],
-                       s=12,c='#d27c20',label='LiDAR: vật cản mới')
+        for x,y,r in self.last_nearby_points:
+            ax.add_patch(Circle((x,y),r,color='#d27c20',alpha=.30))
+        if self.last_nearby_points:
+            ax.scatter([p[0] for p in self.last_nearby_points],
+                       [p[1] for p in self.last_nearby_points],
+                       s=19,c='#d27c20',label='Đã phát hiện trong 4 m')
+        if self.samples:
+            robot_now=self.samples[-1]
+            ax.add_patch(Circle(
+                (robot_now['x_rear_m'],robot_now['y_rear_m']),
+                float(self.cfg.get('nearby_radius_m',4.0)),
+                fill=False,linestyle=':',ec='#777777',alpha=.5))
         goal=self.cfg['goal_xy']
         ax.scatter([goal[0]],[goal[1]],marker='*',s=135,c='#248e66',label='Đích')
         last=self.samples[-1]
@@ -870,7 +871,7 @@ class AckermannHMI(QMainWindow):
         ax.set_xlim(-6,19.5);ax.set_ylim(-6,8)
         ax.set_aspect('equal',adjustable='box')
         ax.set_xlabel('X (m)');ax.set_ylabel('Y (m)')
-        ax.set_title('Quỹ đạo cầu sau P, vật cản tĩnh, LiDAR và đích')
+        ax.set_title('Vùng quan sát 4 m, vật cản CHƯA BIẾT trước và đích')
         ax.grid(True,alpha=.27);ax.legend(loc='upper left',fontsize=8)
         self.map_panel.canvas.draw_idle()
 

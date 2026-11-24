@@ -316,7 +316,7 @@ class AckermannHMI(QMainWindow):
             ('torque','Mômen tổng (Nm)'),
             ('wheel','Tốc độ bánh RL/RR/FL/FR'),
             ('lidar','Khoảng cách LiDAR trước/sau'),
-            ('lidar_filter','LiDAR: đất / dưới đất / vật mới'),
+            ('lidar_filter','LiDAR: đất / tự thân / vật mới'),
             ('goal','Sai số vị trí đích (m)'),
             ('route','Lệch quỹ đạo A* (m)'),
             ('grade','Dốc dọc theo hướng xe (°)'),
@@ -787,7 +787,7 @@ class AckermannHMI(QMainWindow):
             text_number(row['lidar_front_m'])+' / '+text_number(row['lidar_rear_m'])+' m')
         stats=self.layer.last_filter_stats
         self.metrics['lidar_filter'].setText(
-            f"{stats['terrain']} / {stats['below_map']} / {stats['dynamic']}")
+            f"{stats['terrain']} / {stats['self']} / {stats['dynamic']}")
         self.metrics['goal'].setText(text_number(row['goal_error_m']))
         self.metrics['route'].setText(text_number(row['route_error_m']))
         self.metrics['grade'].setText(text_number(row['road_grade_deg'],'+.2f'))

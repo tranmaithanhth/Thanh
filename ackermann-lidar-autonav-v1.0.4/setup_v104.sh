@@ -1,29 +1,27 @@
 #!/usr/bin/env bash
-# Build ROS2 Humble Gazebo Classic force-control plugin without sourcing ROS1/Noetic.
+# v1.0.4 reuses the VERIFIED v1.0.3 C++ AWD force plugin.
+# Do not change workspace symlinks, ROS distro, or rebuild Gazebo unnecessarily.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WS="${ACKERMANN_WS:-$HOME/ackermann_humble_ws}"
-mkdir -p "$WS/src"
-PACKAGE_PATH="$WS/src/ackermann_force_control"
-if [[ -e "$PACKAGE_PATH" && ! -L "$PACKAGE_PATH" ]]; then
-  echo "ERROR: '$PACKAGE_PATH' already exists and is not a symlink. Won't overwrite." >&2
-  exit 1
+FORCE_LIB="$WS/install/ackermann_force_control/lib/libackermann_force_drive.so"
+RAY_LIB=/opt/ros/humble/lib/libgazebo_ros_ray_sensor.so
+if [[ ! -f /opt/ros/humble/setup.bash ]]; then
+ echo "ERROR: ROS 2 Humble not found at /opt/ros/humble" >&2; exit 1
 fi
-if [[ -L "$PACKAGE_PATH" && "$(readlink -f "$PACKAGE_PATH")" != "$ROOT/ackermann_force_control" ]]; then
-  echo "ERROR: existing '$PACKAGE_PATH' points to something else. Resolve manually." >&2
-  exit 1
+if [[ ! -f "$RAY_LIB" ]]; then
+ echo "[SETUP] Missing Gazebo Classic ROS ray plugin."
+ echo "Install: sudo apt update && sudo apt install -y ros-humble-gazebo-plugins"
+ exit 1
 fi
-if [[ ! -e "$PACKAGE_PATH" ]]; then ln -s "$ROOT/ackermann_force_control" "$PACKAGE_PATH"; fi
-exec env -i HOME="$HOME" USER="${USER:-$(id -un)}" LOGNAME="${LOGNAME:-$(id -un)}" \
-  PATH=/usr/local/bin:/usr/bin:/bin LANG="${LANG:-C.UTF-8}" ACKERMANN_WS="$WS" \
-  bash --noprofile --norc -c '
-set -eo pipefail
-source /opt/ros/humble/setup.bash
-cd "$ACKERMANN_WS"
-colcon build --symlink-install --packages-select ackermann_force_control --event-handlers console_direct+
-source "$ACKERMANN_WS/install/setup.bash"
-test -f "$ACKERMANN_WS/install/ackermann_force_control/lib/libackermann_force_drive.so" || {
- echo "ERROR: plugin .so was not installed" >&2; exit 1;
-}
-echo "[OK] Force plugin available: $ACKERMANN_WS/install/ackermann_force_control/lib/libackermann_force_drive.so"
-'
+if [[ ! -f "$FORCE_LIB" ]]; then
+ echo "[SETUP] Force plugin not yet installed. Building the unchanged v1.0.3 dependency..."
+ bash "$ROOT/../ackermann-force-trajectory-v1.0.3/setup_v103.sh"
+fi
+if [[ ! -f "$FORCE_LIB" ]]; then
+ echo "ERROR: C++ force plugin still missing: $FORCE_LIB" >&2; exit 1
+fi
+echo "[OK] ROS 2 Humble and Gazebo Classic LiDAR plugin found."
+echo "[OK] Existing AWD force plugin: $FORCE_LIB"
+echo "[OK] v1.0.4 code uses the v1.0.3 force controller unchanged."
+python3 -m unittest discover -s "$ROOT/tests" -v

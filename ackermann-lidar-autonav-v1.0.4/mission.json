@@ -118,5 +118,9 @@
   "traction_max_force_N": 145,
   "traction_low_xy_speed_m_s": 0.035,
   "traction_slip_wheel_speed_m_s": 0.65,
-  "traction_slip_force_cap_N": 75
+  "traction_slip_force_cap_N": 75,
+  "traction_intent_speed_m_s": 0.22,
+  "traction_dwa_min_moving_vref_m_s": 0.035,
+  "traction_dwa_progress_speed_m_s": 0.11,
+  "traction_dwa_low_speed_penalty": 2.5
 }

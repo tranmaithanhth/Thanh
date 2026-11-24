@@ -104,6 +104,13 @@ class TestHmiData(unittest.TestCase):
         self.assertIn("self.process.terminate()",source)
         self.assertIn("self.node.send_manual(0.0,0.0)",source)
 
+    def test_shortest_route_error(self):
+        from hmi_data import distance_to_path
+        self.assertTrue(math.isnan(distance_to_path(0,0,[])))
+        self.assertAlmostEqual(distance_to_path(3,4,[(0,0),(6,0)]),4)
+        self.assertAlmostEqual(distance_to_path(7,0,[(0,0),(6,0)]),1)
+        self.assertAlmostEqual(distance_to_path(0,3,[(1,3)]),1)
+
     def test_matlab_bridge_is_explicit_about_contact_forces(self):
         matlab=(BASE/'matlab/export_ackermann_hmi_csv.m').read_text()
         self.assertIn('StateLog',matlab)

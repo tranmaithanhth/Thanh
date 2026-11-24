@@ -29,6 +29,54 @@ def is_terrain_return(hit_z, ground_z, tolerance):
             hit_z <= ground_z + max(0.0, float(tolerance)))
 
 
+def is_self_return(x, y, body_x, body_y, yaw,
+                   x_back=-0.64, x_front=0.67, half_width=0.43):
+    """Mask only the measured robot's occupied XY footprint.
+
+    Local X is chassis-forward and local Y is left. The bounds enclose the
+    1.2x0.6 m chassis and its wheels with a small cushion, but NOT the
+    whole 1.2m inflation disk used for A* safety.
+    """
+    dx=x-body_x
+    dy=y-body_y
+    forward=math.cos(yaw)*dx+math.sin(yaw)*dy
+    lateral=-math.sin(yaw)*dx+math.cos(yaw)*dy
+    return x_back <= forward <= x_front and abs(lateral) <= half_width
+
+
+def first_terrain_intersection(ox, oy, oz, vx, vy, vz, max_distance,
+                               z_shift=0.0, step=0.07, tolerance=0.03):
+    """Approximate the first range at which a 3D laser beam reaches terrain.
+
+    Rays are transformed using full roll/pitch/yaw; terrain is the known
+    MATLAB heightmap. Returns inf when no terrain crossing occurs.
+    Only use for a near-surface candidate, not as a global obstacle eraser.
+    """
+    if max_distance <= 0 or step <= 0:
+        return math.inf
+    previous=0.0
+    count=max(1,math.ceil(max_distance/step))
+    for i in range(1,count+1):
+        d=min(max_distance, i*step)
+        x=ox+d*vx
+        y=oy+d*vy
+        z=oz+d*vz
+        ground=terrain(x,y)[0]+z_shift
+        if z <= ground+tolerance:
+            lo=previous
+            hi=d
+            for _ in range(9):
+                mid=(lo+hi)*0.5
+                hmid=terrain(ox+mid*vx,oy+mid*vy)[0]+z_shift
+                if oz+mid*vz <= hmid+tolerance:
+                    hi=mid
+                else:
+                    lo=mid
+            return hi
+        previous=d
+    return math.inf
+
+
 def rotate_quaternion(q, v):
     """Rotate local xyz by quaternion (x,y,z,w); caller supplies a unit q."""
     qx,qy,qz,qw=q
@@ -52,6 +100,13 @@ class LidarObstacleLayer:
         self.model_to_lidar_x = float(cfg.get('lidar_mount_x_m',0.20))
         self.model_to_lidar_z = float(cfg.get('lidar_mount_z_m',0.33))
         self.ground_tolerance = float(cfg.get('lidar_ground_tolerance_m',0.12))
+        self.ground_raycast_tolerance_m = float(
+            cfg.get('lidar_ground_raycast_tolerance_m',0.20))
+        self.ground_raycast_height_gate_m = float(
+            cfg.get('lidar_ground_raycast_height_gate_m',0.25))
+        self.self_x_back = float(cfg.get('lidar_self_x_back_m',-0.64))
+        self.self_x_front = float(cfg.get('lidar_self_x_front_m',0.67))
+        self.self_half_width = float(cfg.get('lidar_self_half_width_m',0.43))
         self.ground_z_shift = float(cfg.get('height_shift_gazebo_m',0.0))
         self.known = [tuple(map(float, o)) for o in cfg.get('obstacles_xy_radius', [])]
         self.front_cone = math.radians(float(cfg.get('lidar_safety_cone_deg', 35.0)))
@@ -60,7 +115,7 @@ class LidarObstacleLayer:
         self._last_direction_ranges = {1: math.inf, -1: math.inf}
         self.last_filter_stats = {
             'valid':0, 'terrain':0, 'below_map':0,
-            'known_static':0, 'dynamic':0}
+            'known_static':0, 'dynamic':0, 'self':0, 'ray_ground':0}
         if self.voxel_m <= 0 or self.max_points < 1 or self.ttl_s <= 0:
             raise ValueError('Invalid LiDAR voxel size, point count, or time-to-live')
 
@@ -85,17 +140,22 @@ class LidarObstacleLayer:
         oy=rear_y+self.offset_m*sin
         sz=None
         q=None
+        model_x=model_y=None
+        model_yaw=yaw
         if model_pose is not None:
             # Odometry is model/chassis origin in world frame, including pitch
             # and roll on the ramp; ray plane is rigidly tilted with chassis.
             mx,my,mz,qx,qy,qz,qw=model_pose
+            model_x,model_y=mx,my
+            model_yaw=math.atan2(2*(qw*qz+qx*qy),
+                                 1-2*(qy*qy+qz*qz))
             q=(qx,qy,qz,qw)
             dx,dy,dz=rotate_quaternion(q,
                 (self.model_to_lidar_x,0.0,self.model_to_lidar_z))
             ox,oy,sz=mx+dx,my+dy,mz+dz
         bins={}
         stats={'valid':0,'terrain':0,'below_map':0,
-               'known_static':0,'dynamic':0}
+               'known_static':0,'dynamic':0,'self':0,'ray_ground':0}
         direction_ranges={1:math.inf,-1:math.inf}
         for i,raw in enumerate(ranges):
             try:d=float(raw)
@@ -108,6 +168,11 @@ class LidarObstacleLayer:
             if q is not None:
                 vx,vy,vz=rotate_quaternion(q,(math.cos(a),math.sin(a),0.0))
                 x=ox+d*vx;y=oy+d*vy
+                if is_self_return(x,y,model_x,model_y,model_yaw,
+                                  self.self_x_back,self.self_x_front,
+                                  self.self_half_width):
+                    stats['self']+=1
+                    continue
                 hit_z=sz+d*vz
                 ground=terrain(x,y)[0]+self.ground_z_shift
                 # Ray hits BELOW the modeled ramp are not vertical obstacles.
@@ -118,8 +183,29 @@ class LidarObstacleLayer:
                     if hit_z < ground-0.20:
                         stats['below_map']+=1
                     continue
+                # When the measured endpoint lies a little ABOVE the
+                # sampled heightmap (e.g. Gazebo 257px heightmap and a tilted
+                # chassis), verify the full beam against the 3D terrain.
+                # This narrow ray-range gate avoids removing tall objects.
+                if 0.0 < hit_z-ground <= self.ground_raycast_height_gate_m:
+                    predicted=first_terrain_intersection(
+                        ox,oy,sz,vx,vy,vz,
+                        min(maximum,d+self.ground_raycast_tolerance_m+0.10),
+                        self.ground_z_shift)
+                    if (math.isfinite(predicted) and
+                        abs(d-predicted)<=self.ground_raycast_tolerance_m):
+                        stats['terrain']+=1
+                        stats['ray_ground']+=1
+                        continue
             else:
                 x=ox+d*math.cos(yaw+a);y=oy+d*math.sin(yaw+a)
+                if is_self_return(
+                    x,y,rear_x+0.4*math.cos(yaw),
+                    rear_y+0.4*math.sin(yaw),yaw,
+                    self.self_x_back,self.self_x_front,
+                    self.self_half_width):
+                    stats['self']+=1
+                    continue
             if abs(a)<=self.front_cone:
                 direction_ranges[1]=min(direction_ranges[1],d)
             if abs(norm_angle(a-math.pi))<=self.front_cone:

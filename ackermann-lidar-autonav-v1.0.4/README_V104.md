@@ -146,3 +146,19 @@ bash -n setup_v104.sh run_world_v104.sh spawn_force_v104.sh auto_drive_v104.sh s
 Nếu **đã có topic nhưng chưa có data**, đọc lỗi plugin từ Terminal 1, kiểm tra sensor URL/TF khi xem RViz. Nếu `/scan` có nhiều publisher, đóng mọi phiên Gazebo trùng. Nếu `[LIDAR HOLD]` xuất hiện mà không có vật thể, kiểm tra phản xạ từ mặt đất dốc hoặc phần thân robot; đây là hạn chế cần hiệu chuẩn sensor pose. Nếu Gazebo đứng, giảm số tia từ 91 xuống 61 hoặc tần số từ 5 xuống 3 trong `tools/patch_robot_v104.py`, sau đó khởi động lại Gazebo.
 
 **Tình trạng xác minh:** mã đã được tạo trong GitHub, cấu hình và kiểm tra offline đã được chuẩn bị; chưa chạy được Gazebo trên máy người dùng từ xa. Phải xác minh `/scan` và tác động trong Gazebo trước khi coi tránh vật cản thời gian thực là đạt.
+
+## 8. HMI điều khiển, giám sát và đối chiếu MATLAB
+
+Đã bổ sung HMI desktop PyQt5 (không sửa plugin động lực học):
+
+```bash
+sudo apt install -y python3-pyqt5 python3-matplotlib python3-numpy
+# Terminal 1: bash run_world_v104.sh
+# Terminal 2: bash spawn_force_v104.sh
+# Terminal 3, tại thư mục ackermann-lidar-autonav-v1.0.4:
+bash hmi_v104.sh
+```
+
+Trên HMI có điều khiển thủ công F (N), delta (độ), bật tự hành A*+LiDAR, chế độ theo dõi không phát lệnh, nút trả lệnh về 0, đồ thị v/F/góc lái/tốc độ bánh, bản đồ XY và LiDAR, xuất CSV/PNG, nạp CSV MATLAB và tính RMSE.
+
+**Hướng dẫn chi tiết:** [README_HMI_V104.md](README_HMI_V104.md). Script chuyển log MATLAB Simulink: [matlab/export_ackermann_hmi_csv.m](matlab/export_ackermann_hmi_csv.m).

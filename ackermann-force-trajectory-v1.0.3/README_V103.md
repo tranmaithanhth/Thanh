@@ -244,3 +244,32 @@ Khi chạy `bash auto_drive_v103.sh --dry-run`, robot **được thiết kế đ
 Log đã nhận từ người sử dụng cho thấy cấu hình mới hoạt động đúng: `max_grade=0.55, extra_clearance=0.35m` và A* tìm 3 waypoint `[(-0.4,-2.0),(11.5,-2.2),(16.0,0.6)]`. Lệnh dự kiến tại chỗ khoảng `F=+20.8 N, delta=+9.9°`, nhưng **không được gửi đi** ở chế độ `--dry-run`. Để xe chạy thật, ngừng dry-run rồi chạy `bash auto_drive_v103.sh` (không có tham số `--dry-run`).
 
 Bản vá dry-run chỉ thay đổi Python; cập nhật bằng `git pull --ff-only origin main` và **không cần biên dịch lại C++**. Trong log mới, node in `[DRY RUN] Planner preview only: NO force_steer commands are published ... STALL detection disabled.` và sẽ tiếp tục hiển thị tuyến/điều khiển dự kiến tới khi người dùng nhấn Ctrl+C hoặc giới hạn thời gian khác. Không chạy manual_drive cùng lúc với auto_drive thật. Trong Gazebo cần quan sát chuyển động và dừng thử nghiệm nếu điều khiển bất thường; lực về 0 không phải phanh đỗ trên dốc.
+
+## 13. Sửa lỗi tự hành dừng tại P=(2.35,-1.75) khi bắt đầu leo dốc (24/11/2026)
+
+**Dữ liệu thực nghiệm:** robot đã bám tuyến A* 3 waypoint `(-0.4,-2) → (11.5,-2.2) → (16,0.6)`, chạy `v≈0.47 m/s` rồi chậm dần khi P đạt `(2.35,-1.75)`; bộ điều khiển chỉ gửi `F≈24 N`, `delta≈-10°`, vận tốc thân báo `≈0.1 m/s` trong lúc tọa độ gần như đứng yên. Sau 12s watchdog báo STALL. Manual Force/AWD trước đó đã đưa xe qua dốc được nên chưa có bằng chứng plugin lực bị hỏng.
+
+**Nguyên nhân trong planner:** `Pose` là điểm giữa cầu sau, nhưng bánh trước cách đó `L=0.8 m`. Với P x≈2.35 và yaw≈4° trên y≈-1.75, dốc tính ở **cầu sau** chỉ khoảng `+0.005`, còn **cầu trước** tại x≈3.15 có dốc khoảng `+0.155`. Planner cũ dùng gradient cầu sau, trong khi ngưỡng hỗ trợ leo dốc là `0.16`, nên **không kích hoạt hỗ trợ** và giữ lực F≈24N.
+
+**Đã sửa Python/JSON, không sửa C++:** 
+- `Mission.axle_grades()` tính riêng gradient dọc tại cầu sau và trước, `grade_for_dynamics()` lấy giá trị trung bình hai cầu để tính feedforward trọng lực và tích phân quỹ đạo dự báo. Đây là mô hình xấp xỉ; không thay thế được lực pháp tuyến và tiếp xúc bánh thật trong Gazebo.
+- Hạ ngưỡng hỗ trợ `hill_start_min_grade` từ 0.16 xuống **0.10**, nhận diện theo dốc của **cả hai cầu**. Khi xe đang leo rất chậm, F được đặt tối thiểu gần **175 N** (giới hạn tổng vẫn **300 N**) trong hàm phản hồi và trong cả tập ứng viên MPC; thuật toán không thể tự giảm lại 24N trong trạng thái này. Lực bổ sung được giảm trơn theo vận tốc từ **0.20 tới 0.45 m/s**, hạn chế dao động đóng/mở trợ lực khi xe vừa tăng tốc.
+- `autonomous_force_nav.py` theo dõi **tiến triển vị trí XY thực tế**; nếu xe đứng gần một chỗ >2 giây ở dốc, bộ phục hồi được phép tăng lực có giới hạn theo thời gian (tham số trong `mission.json`, tối đa **180 N** theo cấu hình mặc định) nhưng **chỉ khi** mô phỏng quỹ đạo ngắn hạn với lực đó không vi phạm vùng cấm, giới hạn dốc và ngưỡng lệch tuyến. Tuyệt đối không bỏ tính toán tránh vật cản để ép xe tiến. Ở chế độ `--dry-run`, cơ chế phục hồi không hoạt động.
+- Log `[AUTO]` bổ sung `frontGrade`; nếu phục hồi kích hoạt sẽ có `[HILL RECOVERY]`.
+
+**Hướng dẫn chạy lại (đóng Gazebo/điều khiển cũ; không cần build lại C++):**
+
+```bash
+cd ~/ackermann_humble_ws/Thanh
+git pull --ff-only origin main
+cd ackermann-force-trajectory-v1.0.3
+python3 -m unittest discover -s tests -v
+# Terminal 1:
+bash run_world_v103.sh
+# Terminal 2, cùng thư mục:
+bash spawn_force_v103.sh
+# Terminal 3, sau khi robot đứng vững:
+bash auto_drive_v103.sh
+```
+
+Để quan sát trước, dùng `bash auto_drive_v103.sh --dry-run` và Ctrl+C sau khi xem tuyến. Trong phiên chạy thật, đối chiếu `frontGrade`, lệnh `F`, `v` và XY ở `x=2.1…4.0`. **Kết quả kỳ vọng** gần `x≈2.35`: khi cầu trước gặp dốc và xe rất chậm, lệnh F không còn chỉ ~24 N mà sẽ tăng tới mức hỗ trợ; khi xe tăng vận tốc, lệnh giảm dần. Đây là kết quả kiểm tra mã và mô hình, **chưa phải xác nhận leo dốc tự động thành công trong Gazebo**. Nếu robot vẫn kẹt, gửi log `[AUTO]` / `[HILL RECOVERY]` và `/ackermann_vehicle/force_state` tại điểm dừng để kiểm tra lực bám hoặc va chạm gầm.

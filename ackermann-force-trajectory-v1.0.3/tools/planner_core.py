@@ -92,6 +92,10 @@ class Mission:
                                             margin=self.route_margin)
                           for i in range(self.nx)] for j in range(self.ny)]
         self.path = []
+        # Direction of travel is selected from ACTUAL pose/yaw, not just XY.
+        # It stays latched while rolling to prevent rapid gear reversal.
+        self.drive_direction = 1
+        self.direction_initialized = False
 
     def to_grid(self, x, y):
         return (round((x-self.bounds[0])/self.grid), round((y-self.bounds[2])/self.grid))
@@ -125,8 +129,17 @@ class Mission:
         return True
 
     def astar(self,start):
-        if not self.safe_xy(*start, margin=self.route_margin) or not self.safe_xy(*self.goal, margin=self.route_margin):
-            raise ValueError(f'Start or goal unsafe with route clearance: start={start} goal={self.goal}; change mission bounds/spawn')
+        if not self.safe_xy(*start):
+            raise ValueError(f'Start {start} is inside a known inflated obstacle, outside bounds, or too steep. '
+                             'Move the vehicle to a physically safe pose.')
+        if not self.safe_xy(*start, margin=self.route_margin):
+            raise ValueError(f'Start {start} is physically valid but inside the additional '
+                             f'{self.route_margin:.2f}m ROUTE safety margin; move away from obstacles '
+                             'and retry. The planner will not waive collision clearance.')
+        if not self.safe_xy(*self.goal, margin=self.route_margin):
+            raise ValueError(f'Goal {self.goal} is outside the safe planning corridor.')
+        self.drive_direction=1
+        self.direction_initialized=False
         if self.segment_safe(start,self.goal):
             self.path=[tuple(start),self.goal]
             return self.path
@@ -225,14 +238,16 @@ class Mission:
         release=float(self.c.get('hill_start_release_speed_m_s',0.45))
         if release<=full_below:
             raise ValueError('hill-start release speed must exceed full-force threshold')
+        direction=1 if vref>0 else -1
+        travel_grade=max(direction*rear,direction*front)
+        along_speed=direction*pose.v
         if not (self.hill_start_force>0.0 and
-                max(rear,front)>=self.hill_start_min_grade and
-                0.0<=pose.v<release and vref>0.20 and
+                travel_grade>=self.hill_start_min_grade and
+                0.0<=along_speed<release and abs(vref)>0.20 and
                 dist>self.goal_tolerance):
             return 0.0
-        # Smoothly release extra torque as the chassis actually accelerates:
-        # avoids switching abruptly from 175N at 0.19m/s to ~30N at 0.21m/s.
-        factor=clamp((release-pose.v)/(release-full_below),0.0,1.0)
+        # Smoothly release torque support in the current travel direction.
+        factor=clamp((release-along_speed)/(release-full_below),0.0,1.0)
         return self.hill_start_force*factor
 
     def hill_start_active(self,pose,vref,dist):
@@ -251,6 +266,25 @@ class Mission:
                 return False
         return True
 
+    def choose_drive_direction(self,pose,target):
+        """Prefer reverse if the route lies behind the current heading.
+
+        This is a simple heading-aware forward/reverse adapter to geometric
+        A*, not a full Hybrid A* or multi-point manoeuvre planner.
+        Changes direction only when nearly stopped to avoid violent reversal.
+        """
+        bearing=math.atan2(target[1]-pose.y,target[0]-pose.x)
+        err=abs(wrap_pi(bearing-pose.yaw))
+        if not self.direction_initialized:
+            self.drive_direction=-1 if err>math.radians(105) else 1
+            self.direction_initialized=True
+        elif abs(pose.v)<0.15:
+            if self.drive_direction>0 and err>math.radians(125):
+                self.drive_direction=-1
+            elif self.drive_direction<0 and err<math.radians(55):
+                self.drive_direction=1
+        return self.drive_direction
+
     def feedback(self,pose):
         tgt,dev=self.target(pose)
         dx=tgt[0]-pose.x;dy=tgt[1]-pose.y
@@ -263,9 +297,19 @@ class Mission:
             vref=0.0
             delta=0.0
         else:
-            vref=min(self.max_speed, max(0.20, 0.7*dist))
-            vref=min(vref, math.sqrt(0.7/max(abs(curvature),0.1)))
-            vref=min(vref, max(0.18, 0.7*dist))
+            direction=self.choose_drive_direction(pose,tgt)
+            speed=min(self.max_speed, max(0.20, 0.7*dist))
+            speed=min(speed, math.sqrt(0.7/max(abs(curvature),0.1)))
+            speed=min(speed, max(0.18, 0.7*dist))
+            # Starting with the route sideways requires slow alignment first.
+            # Reverse speed is conservative and physically bounded by sign.
+            if direction<0:
+                speed=min(speed,float(self.c.get('reverse_cruise_speed_m_s',0.35)))
+            bearing_err=abs(wrap_pi(math.atan2(tgt[1]-pose.y,tgt[0]-pose.x)
+                                    -pose.yaw))
+            if abs(math.cos(bearing_err))<0.40:
+                speed=min(speed,float(self.c.get('heading_alignment_speed_m_s',0.22)))
+            vref=direction*speed
         grade=self.grade_for_dynamics(pose)
         # Signed drive force from speed tracking + rolling drag + gravity feedforward.
         a=clamp(1.4*(vref-pose.v),-1.6,1.6)
@@ -277,8 +321,9 @@ class Mission:
         # AWD is preferable: rear-only could spin tires instead of climbing.
         hill_floor=self.hill_start_force_floor(pose,vref,dist)
         if hill_floor>0.0:
-            # Front axle can be on the ramp while rear P still appears flat.
-            force=max(force,hill_floor)
+            # Force sign must follow the chosen travel direction.
+            direction=1 if vref>0 else -1
+            force=direction*max(direction*force,hill_floor)
         return force,delta,tgt,dist,dev,vref
 
     def step(self,pose,F,delta,dt):
@@ -305,9 +350,10 @@ class Mission:
         # speed model and send 24N while the front axle was climbing.
         hill_floor=self.hill_start_force_floor(pose,vref,dist)
         if hill_floor>0.0:
-            candidate_F=[F for F in candidate_F if F>=hill_floor-1e-6]
+            direction=1 if vref>0 else -1
+            candidate_F=[F for F in candidate_F if direction*F>=hill_floor-1e-6]
             if not candidate_F:
-                candidate_F=[hill_floor]
+                candidate_F=[direction*hill_floor]
         candidate_delta=sorted(set(round(clamp(steer0+shift,-self.max_delta,self.max_delta),4)
                                    for shift in (-0.18,-0.09,0.,0.09,0.18)))
         best=None
@@ -317,7 +363,8 @@ class Mission:
             # reverse torque to "avoid" a route tangent produces deadlock.
             # A genuine obstacle can still force zero if every forward rollout
             # fails the safety checks.
-            if pose.v < 0.25 and vref > 0.25 and F < self.min_progress_force:
+            if ((1 if vref>=0 else -1)*pose.v < 0.25 and abs(vref)>0.25 and
+                    (1 if vref>=0 else -1)*F < self.min_progress_force):
                 continue
             for delta in candidate_delta:
                 pred=pose; safe=True; pathcost=0.; mindist=float('inf')

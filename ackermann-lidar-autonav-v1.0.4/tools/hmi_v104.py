@@ -685,7 +685,11 @@ class AckermannHMI(QMainWindow):
         if scan is None:return
         stamp=(scan.header.stamp.sec+
                scan.header.stamp.nanosec*1e-9)
-        if stamp==self.last_scan_stamp:return
+        if stamp==self.last_scan_stamp:
+            # Drop orange map points when /scan stops: do not indefinitely
+            # display an old echo as if it were a live obstacle.
+            self.last_lidar_points=self.layer.world_points()
+            return
         self.last_scan_stamp=stamp
         odom=self.node.odom
         if odom is None:return

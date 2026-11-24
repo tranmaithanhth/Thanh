@@ -90,6 +90,34 @@ bash auto_drive_v104.sh
 
 Có thể xem log `[LIDAR]`, `[LIDAR HOLD]`, `[LIDAR REPLAN]`, `[LIDAR A*]` và `[AUTO]`. Nếu scan mất hơn 1,1s, controller chủ động phanh thay vì tiếp tục đi theo bản đồ tĩnh. `--dry-run` không phát lệnh tới plugin.
 
+### Kiểm tra nhầm sườn dốc thành vật cản (bản vá 24/11/2026)
+
+Nếu HMI hiển thị **hàng chấm màu cam gần như thẳng đứng tại X≈4,9 m**
+khi robot ở gần điểm xuất phát (0,-2), đây có thể là điểm LaserScan
+va vào sườn dốc nhưng bị phép chiếu độ cao phân loại nhầm thành vật cản mới.
+
+Bản vá trong `tools/lidar_obstacles.py` loại các điểm có độ cao suy ra từ
+LaserScan **tại hoặc thấp hơn độ cao địa hình dự đoán cộng sai số 0,12 m**.
+Điểm cao hơn ngưỡng vẫn đi qua bộ lọc vật cản động và phanh. Không sửa
+`/scan` gốc, không bỏ LiDAR, không thay đổi động lực học, plugin C++,
+hay tham số khối lượng/ma sát trong MATLAB.
+
+HMI bổ sung **LiDAR: đất / dưới đất / vật mới**; log điều khiển tự hành
+trong mỗi vài giây sẽ có `ground=...`, `below_map=...`, `dynamic=...`.
+Đường chấm cam do mặt dốc phải biến mất trên tab XY sau khi HMI/controller
+đã khởi động lại với file Python mới. Khi thêm một hộp đủ cao so với mặt
+dốc vào đường đi, `dynamic` vẫn phải tăng và LiDAR phải phanh/lập đường.
+
+Sau `git pull`, **dừng rồi mở lại HMI và tiến trình auto** để nạp bộ lọc
+mới; không cần tắt Gazebo hoặc spawn robot lại nếu chỉ sửa Python. Chú ý:
+ngay cả sau khi loại điểm sai, xe vẫn có thể đứng yên vì A* rollout,
+ma sát/tiếp xúc hoặc góc khởi đầu. Đối chiếu thêm `/force_steer`,
+`/force_state`, `/odom` và log `[AUTO]` trước khi kết luận.
+
+**Giới hạn:** Đây là lọc theo bản đồ địa hình đã biết; vật thể thấp dưới
+`lidar_ground_tolerance_m`, bản đồ địa hình sai và vật cản nhỏ có thể
+không được nhận diện. Chưa đủ an toàn để sử dụng ngoài mô phỏng.
+
 ## 4. Kiểm tra phát hiện vật cản mới
 
 Khi Gazebo đang chạy, bạn có thể dùng chức năng Insert của Gazebo để thêm hộp mới vào trước robot. Hoặc tạo hộp tĩnh màu cam trên đường đi ngay khi robot đang di chuyển:

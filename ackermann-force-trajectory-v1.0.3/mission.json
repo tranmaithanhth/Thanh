@@ -72,5 +72,7 @@
   "recovery_initial_force_N": 75,
   "recovery_ramp_N_per_s": 22,
   "recovery_max_force_N": 180,
-  "recovery_horizon_s": 0.45
+  "recovery_horizon_s": 0.45,
+  "hill_start_full_force_below_m_s": 0.2,
+  "hill_start_release_speed_m_s": 0.45
 }

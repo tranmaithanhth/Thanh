@@ -137,11 +137,14 @@ def load_matlab_csv(path,wheel_radius_m=0.15):
     if len(dedup)<2:raise ValueError("MATLAB CSV contains only one unique timestamp")
     return dedup
 
-def interpolate(series,t,key):
-    """Linear interpolation with NaN outside the MATLAB time support."""
+def interpolate(series,t,key,times=None):
+    """Linear interpolation with NaN outside MATLAB time support.
+
+    Pass a precomputed times array when evaluating thousands of ROS samples.
+    """
     if not series or t<series[0]["t_s"] or t>series[-1]["t_s"]:
         return math.nan
-    times=[r["t_s"] for r in series]
+    if times is None:times=[r["t_s"] for r in series]
     i=bisect.bisect_left(times,t)
     if i<len(times) and abs(times[i]-t)<1e-9:
         return numeric(series[i].get(key))
@@ -159,13 +162,14 @@ def compare_rmse(gazebo,matlab,keys=None):
     """Time-aligned RMSE; no invented zero padding or extrapolation."""
     if keys is None:keys=[k for k,_ in COMPARED]
     report={}
+    times=[r["t_s"] for r in matlab]
     for key in keys:
         diffs=[]
         for row in gazebo:
             t=numeric(row.get("t_s"))
             val=numeric(row.get(key))
             if not math.isfinite(t) or not math.isfinite(val):continue
-            ref=interpolate(matlab,t,key)
+            ref=interpolate(matlab,t,key,times=times)
             if not math.isfinite(ref):continue
             delta=yaw_error_deg(val,ref) if key=="yaw_deg" else val-ref
             diffs.append(delta)
@@ -177,6 +181,7 @@ def compare_rmse(gazebo,matlab,keys=None):
 def export_comparison_csv(path,gazebo,matlab,keys=None):
     """Interpolate MATLAB at each measured Gazebo time; label every column."""
     if keys is None:keys=[k for k,_ in COMPARED]
+    times=[r["t_s"] for r in matlab]
     with Path(path).open("w",newline="",encoding="utf-8-sig") as fp:
         cols=["t_s"]
         for key in keys:cols.extend(("Gazebo_"+key,"MATLAB_"+key,"error_"+key))
@@ -187,7 +192,7 @@ def export_comparison_csv(path,gazebo,matlab,keys=None):
             if not math.isfinite(t):continue
             out={"t_s":t}
             for key in keys:
-                a=numeric(r.get(key));b=interpolate(matlab,t,key)
+                a=numeric(r.get(key));b=interpolate(matlab,t,key,times=times)
                 out["Gazebo_"+key]=a
                 out["MATLAB_"+key]=b
                 out["error_"+key]=(yaw_error_deg(a,b) if key=="yaw_deg" else a-b) if (

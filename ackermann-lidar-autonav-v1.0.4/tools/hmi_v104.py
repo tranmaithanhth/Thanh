@@ -18,7 +18,7 @@ from rclpy.node import Node
 from nav_msgs.msg import Odometry, Path as RosPath
 from gazebo_msgs.msg import ModelStates
 from gazebo_msgs.srv import SpawnEntity, DeleteEntity
-from std_msgs.msg import Float64MultiArray
+from std_msgs.msg import Float64MultiArray, String
 
 from PyQt5.QtCore import QEvent, QProcess, QProcessEnvironment, QTimer, Qt
 from PyQt5.QtWidgets import (
@@ -52,6 +52,7 @@ ODOM='/ackermann_vehicle/odom'
 STATE='/ackermann_vehicle/force_state'
 ROUTE='/ackermann_vehicle/planned_path'
 LOCAL_PATH='/ackermann_vehicle/local_path'
+LOCAL_STATUS='/ackermann_vehicle/local_planner_status'
 SCENE='/gazebo/model_states'
 NEARBY='/ackermann_vehicle/nearby_obstacles'
 
@@ -68,6 +69,8 @@ class TelemetryNode(Node):
         self.route=None
         self.local_route=None
         self.local_route_at=0.
+        self.local_status={}
+        self.local_status_at=0.
         self.nearby=[]
         self.scene_models={}
         self.odom_at=0.0
@@ -78,6 +81,7 @@ class TelemetryNode(Node):
         self.create_subscription(Float64MultiArray,STATE,self._state,10)
         self.create_subscription(RosPath,ROUTE,self._route,10)
         self.create_subscription(RosPath,LOCAL_PATH,self._local_route,10)
+        self.create_subscription(String,LOCAL_STATUS,self._local_status,10)
         self.create_subscription(ModelStates,SCENE,self._scene,10)
         self.create_subscription(Float64MultiArray,NEARBY,self._nearby,10)
         self.spawn_client=self.create_client(SpawnEntity,'/spawn_entity')
@@ -96,6 +100,15 @@ class TelemetryNode(Node):
     def _local_route(self,msg):
         self.local_route=msg
         self.local_route_at=time.monotonic()
+
+    def _local_status(self,msg):
+        try:
+            data=json.loads(msg.data)
+            if isinstance(data,dict):
+                self.local_status=data
+                self.local_status_at=time.monotonic()
+        except (ValueError,TypeError):
+            pass
 
     def _scene(self,msg):
         # Operator scenario editor knows all physical models, but the
@@ -368,6 +381,7 @@ class AckermannHMI(QMainWindow):
             ('wheel','Tốc độ bánh RL/RR/FL/FR'),
             ('nearby','Khoảng hở trước/sau (m)'),
             ('nearby_count','Vật cản đang quan sát (trong 4 m)'),
+            ('local_solver','Bộ cục bộ thực tế / ứng viên an toàn'),
             ('goal','Sai số vị trí đích (m)'),
             ('route','Lệch quỹ đạo A* (m)'),
             ('grade','Dốc dọc theo hướng xe (°)'),
@@ -749,6 +763,8 @@ class AckermannHMI(QMainWindow):
         self.node.route=None
         self.node.local_route=None
         self.node.local_route_at=0.
+        self.node.local_status={}
+        self.node.local_status_at=0.
         self.node.nearby=[]
         self.node.nearby_at=0.
         self.last_nearby_points=[]
@@ -1234,6 +1250,17 @@ class AckermannHMI(QMainWindow):
             text_number(row['nearby_front_m'])+' / '+
             text_number(row['nearby_rear_m'])+' m')
         self.metrics['nearby_count'].setText(str(row['nearby_count']))
+        if time.monotonic()-self.node.local_status_at<2.0:
+            st=self.node.local_status
+            label=str(st.get('requested','?'))+' → '+str(
+                st.get('effective','?'))
+            if int(st.get('dwa_tested',0)):
+                label+=f"  [{st.get('dwa_valid',0)}/{st['dwa_tested']}]"
+            if st.get('no_safe'):
+                label+=' ⚠ ĐANG PHANH'
+            self.metrics['local_solver'].setText(label)
+        else:
+            self.metrics['local_solver'].setText('—')
         self.metrics['goal'].setText(text_number(row['goal_error_m']))
         self.metrics['route'].setText(text_number(row['route_error_m']))
         self.metrics['grade'].setText(text_number(row['road_grade_deg'],'+.2f'))

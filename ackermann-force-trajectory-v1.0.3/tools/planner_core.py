@@ -118,24 +118,27 @@ class Mission:
         cross=-hx*math.sin(yaw)+hy*math.cos(yaw)
         return abs(grade)<=self.max_grade and abs(cross)<=self.cross_grade
 
-    def segment_safe(self,a,b):
-        # Global route simplification must retain the clearance used by A*.
+    def segment_safe(self,a,b,margin=None):
+        # Global route simplification must retain route clearance. A starting
+        # connector may use physical (inflated) clearance without the extra
+        # route margin; it must still never intersect a known obstacle.
+        if margin is None:margin=self.route_margin
         distance = math.hypot(b[0]-a[0], b[1]-a[1])
         steps = max(1, math.ceil(distance/0.10))
         for k in range(steps+1):
             t=k/steps
             if not self.safe_xy(a[0]+t*(b[0]-a[0]),a[1]+t*(b[1]-a[1]),
-                                margin=self.route_margin):return False
+                                margin=margin):return False
         return True
 
     def astar(self,start):
         if not self.safe_xy(*start):
             raise ValueError(f'Start {start} is inside a known inflated obstacle, outside bounds, or too steep. '
                              'Move the vehicle to a physically safe pose.')
-        if not self.safe_xy(*start, margin=self.route_margin):
-            raise ValueError(f'Start {start} is physically valid but inside the additional '
-                             f'{self.route_margin:.2f}m ROUTE safety margin; move away from obstacles '
-                             'and retry. The planner will not waive collision clearance.')
+        # The start can be outside the EXTRA 0.35m global-route margin while
+        # still physically safe. Connect to a route-clear cell using the true
+        # inflated physical footprint, without dropping collision checks.
+        start_has_route_margin=self.safe_xy(*start,margin=self.route_margin)
         if not self.safe_xy(*self.goal, margin=self.route_margin):
             raise ValueError(f'Goal {self.goal} is outside the safe planning corridor.')
         self.drive_direction=1
@@ -147,11 +150,41 @@ class Mission:
         gi,gj=self.to_grid(*self.goal)
         def passable(i,j):
             return 0<=i<self.nx and 0<=j<self.ny and not self.occupied[j][i]
-        if not passable(si,sj) or not passable(gi,gj):
-            raise ValueError('Grid resolution snapped start/goal into obstacle; reduce resolution')
-        start_id=(si,sj); goal_id=(gi,gj)
-        costs={start_id:0.0}; parents={}; open_set=[]; counter=0
-        heapq.heappush(open_set,(math.hypot(si-gi,sj-gj)*self.grid,counter,start_id))
+        if not passable(gi,gj):
+            raise ValueError('Goal snapped into route obstacle; reduce grid resolution')
+        needs_connector=(not start_has_route_margin) or (not passable(si,sj))
+        goal_id=(gi,gj)
+        costs={};parents={};open_set=[];counter=0
+        if needs_connector:
+            # Virtual grid start; seed multiple safe, short physical connectors
+            # rather than incorrectly treating the nearest blocked grid cell
+            # as drivable. Entire rest of route obeys the extra clearance.
+            start_id=(-1,-1)
+            options=[]
+            for j in range(max(0,sj-9),min(self.ny,sj+10)):
+                for i in range(max(0,si-9),min(self.nx,si+10)):
+                    if not passable(i,j):continue
+                    xy=self.to_world(i,j)
+                    d=math.hypot(xy[0]-start[0],xy[1]-start[1])
+                    if d>2.8 or not self.segment_safe(start,xy,margin=0.0):
+                        continue
+                    options.append((d,i,j))
+            options.sort()
+            if not options:
+                raise ValueError('No collision-free connection from current pose '
+                                 'to any route-clear grid cell; move to open ground')
+            for d,i,j in options[:16]:
+                node=(i,j)
+                costs[node]=d
+                parents[node]=start_id
+                counter+=1
+                x,y=self.to_world(i,j)
+                h=math.hypot(x-self.goal[0],y-self.goal[1])
+                heapq.heappush(open_set,(d+h,counter,node))
+        else:
+            start_id=(si,sj)
+            costs[start_id]=0.0
+            heapq.heappush(open_set,(math.hypot(si-gi,sj-gj)*self.grid,counter,start_id))
         closed=set()
         neighbors=[(di,dj) for di in (-1,0,1) for dj in (-1,0,1) if di or dj]
         while open_set:
@@ -185,8 +218,16 @@ class Mission:
             nodes.append(parents[nodes[-1]])
         nodes.reverse()
         raw=[tuple(start)]+[self.to_world(*n) for n in nodes[1:-1]]+[self.goal]
-        smooth=[raw[0]]
-        i=0
+        if needs_connector:
+            # First leg is physically safe, not route-margin safe; never
+            # simplify it into a long shortcut across the obstacle buffer.
+            if len(raw)<3 or not self.segment_safe(raw[0],raw[1],margin=0.0):
+                raise RuntimeError('A* initial physical connector invalid')
+            smooth=[raw[0],raw[1]]
+            i=1
+        else:
+            smooth=[raw[0]]
+            i=0
         while i<len(raw)-1:
             nxt=len(raw)-1
             while nxt>i+1 and not self.segment_safe(raw[i],raw[nxt]):nxt-=1

@@ -24,6 +24,13 @@ def is_environment(name):
             any(name.startswith(prefix) for prefix in IGNORED_PREFIXES))
 
 
+def stopping_distance(speed, decel, reaction_s, margin_m):
+    """Conservative commanded-motor braking envelope; not a parking brake."""
+    v=abs(float(speed))
+    a=max(0.1,float(decel))
+    return max(0.1,float(margin_m))+v*max(0.0,float(reaction_s))+v*v/(2.0*a)
+
+
 def closest_edge_distance(x, y, radius, px, py):
     return max(0., math.hypot(x-px, y-py)-max(0., radius))
 

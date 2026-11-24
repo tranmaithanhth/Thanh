@@ -111,6 +111,17 @@ class TestTerrainAndAutonomy(unittest.TestCase):
         self.assertLess(i/10,120)
 
 
+class TestDryRunProgressGuard(unittest.TestCase):
+    def test_dry_run_skips_progress_watchdog(self):
+        # Static source guard because the ROS 2 node cannot be instantiated
+        # in this no-ROS, offline planner test suite.
+        nav=(BASE/'tools/autonomous_force_nav.py').read_text(encoding='utf-8')
+        self.assertIn('if not self.dry_run:',nav)
+        self.assertIn('stationary odometry is an expected result',nav)
+        self.assertIn('self.last_progress=(now,pose.x,pose.y)',nav)
+        self.assertIn('NO force_steer commands are published',nav)
+
+
 class TestForcePluginScheduling(unittest.TestCase):
     def test_force_set_on_every_physics_step(self):
         # Regression: Gazebo world uses 1ms step. SetForce must not be

@@ -18,7 +18,7 @@ FIELDS=(
     "omega_rl_rad_s", "omega_rr_rad_s", "omega_fl_rad_s", "omega_fr_rad_s",
     "tau_rl_Nm", "tau_rr_Nm", "tau_fl_Nm", "tau_fr_Nm", "tau_total_Nm",
     "wheel_surface_avg_m_s", "road_grade_deg", "route_error_m",
-    "lidar_front_m", "lidar_rear_m", "lidar_age_s", "lidar_beams",
+    "nearby_front_m", "nearby_rear_m", "nearby_age_s", "nearby_count",
     "goal_error_m", "mode"
 )
 COMPARED=(

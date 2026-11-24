@@ -462,6 +462,15 @@ class AckermannHMI(QMainWindow):
             self._set_mode('OBSERVE')
 
     def _stop(self):
+        # Observe-only HMI cannot kill a controller launched in another
+        # terminal. Explain this explicitly rather than claiming STOP owns it.
+        external=(self.mode not in ('MANUAL','AUTO','HANDOFF') and
+                  self.node.count_publishers(CMD)>0)
+        if external:
+            QMessageBox.warning(self,'Controller ngoài HMI',
+                'Đang có controller bên ngoài HMI phát lực. Nút DỪNG LỆNH '
+                'chỉ phát F=0 tạm thời, KHÔNG thể dừng controller đó. '
+                'Hãy nhấn Ctrl+C trong terminal đang chạy auto/manual.')
         self._set_mode('STOPPING')
         if self.process is not None and self.process.state()!=QProcess.NotRunning:
             self.process.terminate()

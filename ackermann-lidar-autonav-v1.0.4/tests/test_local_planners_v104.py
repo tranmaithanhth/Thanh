@@ -123,6 +123,34 @@ class TestLocalPlanners(unittest.TestCase):
         self.assertGreaterEqual(candidate[4],0.0)
         self.assertTrue(m.safe_motion(pose.x,pose.y,pose.yaw))
 
+    def test_dwa_must_not_silently_use_shorter_legacy_force_sampler(self):
+        # The reported vref=.75 at measured v=.16 indicates an old rollout
+        # command: reachable DWA maximum is v+.135 at 10Hz. If DWA cannot
+        # find a safe 2.5s candidate, return an explicit stop/replan request.
+        m=self.mission('DWA')
+        called=[]
+        def legacy_would_drive(_pose):
+            called.append('LEGACY')
+            return (20.,-.45,15.,1.,.75)
+        m._dwa=lambda pose,feedback:None
+        # Replace only the legacy implementation; any call is a regression.
+        from unittest.mock import patch
+        with patch('lidar_planner.DynamicMission.local_force_steer',
+                   side_effect=legacy_would_drive):
+            cmd=m.local_force_steer(Pose(1.88,-.31,math.radians(-23.),.3))
+        self.assertEqual(called,[])
+        self.assertEqual(cmd,(0.,0.,cmd[2],cmd[3],0.))
+        self.assertTrue(m.no_safe_rollout)
+        self.assertEqual(m.last_solver,'NO_SAFE_DWA')
+
+    def test_force_is_clamped_and_steer_never_exceeds_original_limits(self):
+        m=self.mission('DWA')
+        pose=Pose(3.,-2.,math.radians(-15.),.2)
+        for speed in (.2,.75,-.35,0.):
+            F=m._force(pose,speed,14.)
+            self.assertLessEqual(abs(F),float(self.config['max_drive_force_N']))
+        self.assertLessEqual(m.max_delta,0.52+1e-6)
+
     def test_safety_fallback_stops_for_collision_at_start(self):
         m=self.mission('DWA')
         m.update_dynamic([('just_spawned',.2,-2.,.5)])

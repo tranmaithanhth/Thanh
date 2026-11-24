@@ -206,6 +206,39 @@ class Mission:
                 return (a[0]+t*(b[0]-a[0]),a[1]+t*(b[1]-a[1])),dev
         return self.path[-1],dev
 
+    def axle_grades(self,pose):
+        """Longitudinal slopes at rear P and front axle, L metres ahead."""
+        c=math.cos(pose.yaw); st=math.sin(pose.yaw)
+        _,rhx,rhy=terrain(pose.x,pose.y)
+        _,fhx,fhy=terrain(pose.x+self.L*c,pose.y+self.L*st)
+        return rhx*c+rhy*st, fhx*c+fhy*st
+
+    def grade_for_dynamics(self,pose):
+        # Half-load per axle proxy; MATLAB rear-axle point alone misses
+        # front contact with ramp during approach.
+        rear,front=self.axle_grades(pose)
+        return 0.5*(rear+front)
+
+    def hill_start_active(self,pose,vref,dist):
+        rear,front=self.axle_grades(pose)
+        return (self.hill_start_force>0.0 and
+                max(rear,front)>=self.hill_start_min_grade and
+                0.0<=pose.v<0.20 and vref>0.20 and
+                dist>self.goal_tolerance)
+
+    def rollout_safe(self,pose,F,delta,horizon_s=0.45):
+        """Short-horizon collision/grade/route-deviation guard for boost."""
+        n=max(1,math.ceil(horizon_s/0.05))
+        pred=pose
+        for _ in range(n):
+            pred=self.step(pred,F,delta,horizon_s/n)
+            if not self.safe_motion(pred.x,pred.y,pred.yaw):
+                return False
+            _,dev,_,_=self.nearest_s_and_target((pred.x,pred.y))
+            if dev>float(self.c.get('replan_after_deviation_m',2.0)):
+                return False
+        return True
+
     def feedback(self,pose):
         tgt,dev=self.target(pose)
         dx=tgt[0]-pose.x;dy=tgt[1]-pose.y
@@ -221,8 +254,7 @@ class Mission:
             vref=min(self.max_speed, max(0.20, 0.7*dist))
             vref=min(vref, math.sqrt(0.7/max(abs(curvature),0.1)))
             vref=min(vref, max(0.18, 0.7*dist))
-        _,hx,hy=terrain(pose.x,pose.y)
-        grade=hx*math.cos(pose.yaw)+hy*math.sin(pose.yaw)
+        grade=self.grade_for_dynamics(pose)
         # Signed drive force from speed tracking + rolling drag + gravity feedforward.
         a=clamp(1.4*(vref-pose.v),-1.6,1.6)
         force=clamp(self.eq_mass*a+self.c_roll*pose.v+self.mass*9.81*grade,
@@ -231,15 +263,13 @@ class Mission:
         # Extra torque must overcome static resistance when starting uphill.
         # This is a commanded motor force, NOT a guarantee of available traction.
         # AWD is preferable: rear-only could spin tires instead of climbing.
-        if (self.hill_start_force > 0.0 and grade >= self.hill_start_min_grade
-                and 0.0 <= pose.v < 0.15 and vref > 0.20
-                and dist > self.goal_tolerance):
-            force = max(force, self.hill_start_force)
+        if self.hill_start_active(pose,vref,dist):
+            # Front axle can be on the ramp while rear P still appears flat.
+            force=max(force,self.hill_start_force)
         return force,delta,tgt,dist,dev,vref
 
     def step(self,pose,F,delta,dt):
-        _,hx,hy=terrain(pose.x,pose.y)
-        grade=hx*math.cos(pose.yaw)+hy*math.sin(pose.yaw)
+        grade=self.grade_for_dynamics(pose)
         dv=(F-self.c_roll*pose.v-self.mass*9.81*grade)/self.eq_mass
         # Physical dynamics can exceed cruise reference; preserve overspeed.
         v=clamp(pose.v+dt*dv,-self.physical_max_speed,self.physical_max_speed)
@@ -258,6 +288,12 @@ class Mission:
         force_shifts=(-45.,-20.,0.,20.,45.)
         candidate_F=sorted(set(round(clamp(F0+shift,-self.max_F,self.max_F),3)
                                for shift in force_shifts))
+        # The old MPC could reject the hill-start torque due to its idealized
+        # speed model and send 24N while the front axle was climbing.
+        if self.hill_start_active(pose,vref,dist):
+            candidate_F=[F for F in candidate_F if F>=self.hill_start_force-1e-6]
+            if not candidate_F:
+                candidate_F=[self.hill_start_force]
         candidate_delta=sorted(set(round(clamp(steer0+shift,-self.max_delta,self.max_delta),4)
                                    for shift in (-0.18,-0.09,0.,0.09,0.18)))
         best=None

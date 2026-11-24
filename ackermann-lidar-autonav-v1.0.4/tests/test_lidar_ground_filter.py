@@ -88,8 +88,12 @@ class TestGroundClassification(unittest.TestCase):
             [1.0],math.pi/2,0.1,0.15,8.0,
             model_x-0.4,model_y,0.0,now=100.0,
             model_pose=(model_x,model_y,chassis_z,0.0,0.0,0.0,1.0)))
+        # 90-degree SIDE return is a valid dynamic obstacle, but it is
+        # deliberately excluded from the forward/rear braking cones (±35°).
         self.assertEqual(len(layer.world_points(now=100.0)),1)
-        self.assertAlmostEqual(layer.nearest(1,now=100.0),1.0)
+        self.assertEqual(layer.last_filter_stats['dynamic'],1)
+        self.assertTrue(math.isinf(layer.nearest(1,now=100.0)))
+        self.assertTrue(math.isinf(layer.nearest(-1,now=100.0)))
 
     def test_ground_height_margin_conservative(self):
         self.assertTrue(is_terrain_return(0.4,0.75,0.12))

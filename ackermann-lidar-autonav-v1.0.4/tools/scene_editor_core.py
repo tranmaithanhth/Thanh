@@ -36,7 +36,7 @@ def unique_obstacle_name(names,bounding_radius_m=0.75):
     used_serials={
         int(match.group(1)) for name in used
         if (match:=re.fullmatch(
-            r"hmi_obstacle_(\\d{3,4})(?:_r\\d{3,4})?",name))
+            r"hmi_obstacle_(\d{3,4})(?:_r\d{3,4})?",name))
     }
     for i in range(1,10000):
         if i in used_serials:continue

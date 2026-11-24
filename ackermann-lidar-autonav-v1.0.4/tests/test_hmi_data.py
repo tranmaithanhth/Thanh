@@ -12,7 +12,8 @@ BASE=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(BASE/'tools'))
 from hmi_data import (
     FIELDS,COMPARED,numeric,quaternion_rpy,force_state_values,
-    export_csv,load_matlab_csv,interpolate,compare_rmse,export_comparison_csv,
+    export_csv,load_matlab_csv,interpolate,compare_rmse,comparison_warnings,
+    export_comparison_csv,
 )
 
 class TestHmiData(unittest.TestCase):
@@ -103,6 +104,27 @@ class TestHmiData(unittest.TestCase):
         self.assertIn("qos_profile_sensor_data",source)
         self.assertIn("self.process.terminate()",source)
         self.assertIn("self.node.send_manual(0.0,0.0)",source)
+
+    def test_matlab_comparison_flags_mismatched_conditions(self):
+        rows_g=[{
+            't_s':float(i),'x_rear_m':1.0+i,'y_rear_m':0.,
+            'v_m_s':.2,'yaw_deg':-179.,'F_cmd_N':90.,
+        } for i in range(6)]
+        rows_m=[{
+            't_s':float(i),'x_rear_m':0.0+i,'y_rear_m':0.,
+            'v_m_s':.2,'yaw_deg':179.,'F_cmd_N':25.,
+        } for i in range(6)]
+        warnings=comparison_warnings(rows_g,rows_m)
+        self.assertTrue(any('X ban' in msg for msg in warnings))
+        self.assertTrue(any('Lệnh lực' in msg for msg in warnings))
+        self.assertFalse(any('yaw' in msg for msg in warnings))
+
+    def test_matlab_comparison_matching_initial_conditions(self):
+        rows=[{
+            't_s':float(i),'x_rear_m':i*.1,'y_rear_m':0.,
+            'v_m_s':.3,'yaw_deg':1.,'F_cmd_N':80.,
+        } for i in range(6)]
+        self.assertEqual(comparison_warnings(rows,rows),[])
 
     def test_shortest_route_error(self):
         from hmi_data import distance_to_path

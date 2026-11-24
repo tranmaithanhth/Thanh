@@ -68,10 +68,15 @@ class TestTractionRecovery(unittest.TestCase):
         for x,y in candidate[5]:
             self.assertTrue(m.safe_xy(x,y))
 
-    def test_zero_speed_never_boosts(self):
+    def test_zero_speed_never_applies_recovery_boost(self):
         m=LocalPlanningMission(dict(self.cfg))
+        pose=Pose(2.,1.,0.,0.)
+        base=m._force(pose,0.,13.7)
+        # Even with vref=0, the existing controller uses gravitational
+        # feedforward on a sloped surface. That ~4 N is not traction boost.
         m.traction_force_floor_N=140.
-        self.assertAlmostEqual(m._force(Pose(2.,1.,0.,0.),0.,13.7),0.)
+        self.assertAlmostEqual(m._force(pose,0.,13.7),base,places=7)
+        self.assertLess(abs(base),140.)
 
     def test_live_code_checks_collision_before_traction_floor(self):
         nav=(ROOT/'tools/autonomous_nearby_nav.py').read_text()

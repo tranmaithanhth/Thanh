@@ -236,3 +236,11 @@ bash auto_drive_v103.sh
 ```
 
 Khi mở auto mới, tuyến A* **không nên** còn bắt đầu bằng `(-0.4,-2)→(4.5,3.8)`. Log dự kiến sẽ có đoạn dài đi gần `y=-2` và rẽ tới đích sau khi qua các vật cản đầu tiên. Nếu vẫn còn 5 waypoint tương tự cũ, phải kiểm tra `git pull` và file `mission.json` đang dùng. Không chạy manual cùng auto; nếu xe đi sai thì Ctrl+C, nhưng lực về 0 không phải phanh giữ trên dốc.
+
+## 12. Dry-run A* tìm đường được nhưng sau 12 giây báo STALL (24/11/2026)
+
+Khi chạy `bash auto_drive_v103.sh --dry-run`, robot **được thiết kế để đứng yên**: node vẫn đọc odom và tìm đường nhưng không tạo publisher lệnh `/ackermann_vehicle/force_steer`. Vì vậy thông báo `STOP: STALL: <0.20m progress over 12s` trong các bản trước là lỗi logic của watchdog, **không phải xe bị kẹt**. Đã sửa: khi `dry_run=True`, vô hiệu hóa kiểm tra tiến triển vị trí; còn kiểm tra kẹt vẫn bật trong chế độ điều khiển thật.
+
+Log đã nhận từ người sử dụng cho thấy cấu hình mới hoạt động đúng: `max_grade=0.55, extra_clearance=0.35m` và A* tìm 3 waypoint `[(-0.4,-2.0),(11.5,-2.2),(16.0,0.6)]`. Lệnh dự kiến tại chỗ khoảng `F=+20.8 N, delta=+9.9°`, nhưng **không được gửi đi** ở chế độ `--dry-run`. Để xe chạy thật, ngừng dry-run rồi chạy `bash auto_drive_v103.sh` (không có tham số `--dry-run`).
+
+Bản vá dry-run chỉ thay đổi Python; cập nhật bằng `git pull --ff-only origin main` và **không cần biên dịch lại C++**. Trong log mới, node in `[DRY RUN] Planner preview only: NO force_steer commands are published ... STALL detection disabled.` và sẽ tiếp tục hiển thị tuyến/điều khiển dự kiến tới khi người dùng nhấn Ctrl+C hoặc giới hạn thời gian khác. Không chạy manual_drive cùng lúc với auto_drive thật. Trong Gazebo cần quan sát chuyển động và dừng thử nghiệm nếu điều khiển bất thường; lực về 0 không phải phanh đỗ trên dốc.

@@ -9,6 +9,7 @@ are revealed to the route planner; previous observations may be remembered.
 from __future__ import annotations
 import math
 import time
+import re
 
 # Infrastructure is not a newly discovered movable obstacle. The terrain
 # and world boundaries are already constrained geometrically in Mission.
@@ -31,6 +32,18 @@ def stopping_distance(speed, decel, reaction_s, margin_m):
     return max(0.1,float(margin_m))+v*max(0.0,float(reaction_s))+v*v/(2.0*a)
 
 
+def model_collision_radius(name, fallback=0.75):
+    """Decode a conservative XY bounding circle from HMI-added model name.
+
+    The model's XY location is still unknown until Gazebo reports it within
+    observation range. Other Gazebo models use the configured fallback.
+    """
+    match=re.fullmatch(r"hmi_obstacle_\d{3,4}_r(\d{3,4})",str(name))
+    if match is not None:
+        return int(match.group(1))/100.0
+    return float(fallback)
+
+
 def closest_edge_distance(x, y, radius, px, py):
     return max(0., math.hypot(x-px, y-py)-max(0., radius))
 
@@ -51,7 +64,7 @@ def sensed_models(model_names, poses, px, py, sensing_radius_m,
         if is_environment(name): continue
         x=float(pose.position.x); y=float(pose.position.y)
         if not all(math.isfinite(v) for v in (x,y)):continue
-        r=float(default_obstacle_radius_m)
+        r=model_collision_radius(name,default_obstacle_radius_m)
         if closest_edge_distance(x,y,r,px,py)<=sensing_radius_m:
             nearby.append((str(name),x,y,r))
     return nearby

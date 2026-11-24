@@ -53,7 +53,8 @@ class LidarNavigator(ForceNavigator):
             self.get_logger().info(
                 f'[LIDAR] scan OK: beams={len(msg.ranges)}, '
                 f'valid={stats["valid"]}, ground={stats["terrain"]}, '
-                f'below_map={stats["below_map"]}, static={stats["known_static"]}, '
+                f'below_map={stats["below_map"]}, ray_ground={stats["ray_ground"]}, '
+                f'self={stats["self"]}, static={stats["known_static"]}, '
                 f'dynamic={stats["dynamic"]}, '
                 f'front={self.layer.nearest(1):.2f}m, '
                 f'rear={self.layer.nearest(-1):.2f}m')

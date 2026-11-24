@@ -17,6 +17,7 @@ FIELDS=(
     "delta_ref_deg", "delta_actual_deg",
     "omega_rl_rad_s", "omega_rr_rad_s", "omega_fl_rad_s", "omega_fr_rad_s",
     "tau_rl_Nm", "tau_rr_Nm", "tau_fl_Nm", "tau_fr_Nm", "tau_total_Nm",
+    "wheel_surface_avg_m_s", "road_grade_deg", "route_error_m",
     "lidar_front_m", "lidar_rear_m", "lidar_age_s", "lidar_beams",
     "goal_error_m", "mode"
 )
@@ -46,6 +47,18 @@ def quaternion_rpy(qx,qy,qz,qw):
     pitch=math.asin(sinp)
     yaw=math.atan2(2.0*(qw*qz+qx*qy),1.0-2.0*(qy*qy+qz*qz))
     return roll,pitch,yaw
+
+def distance_to_path(x,y,points):
+    """Shortest planar distance to a published A* polyline; NaN if absent."""
+    if not points:return math.nan
+    if len(points)==1:return math.hypot(x-points[0][0],y-points[0][1])
+    best=math.inf
+    for (ax,ay),(bx,by) in zip(points,points[1:]):
+        dx,dy=bx-ax,by-ay
+        length2=dx*dx+dy*dy
+        t=max(0.0,min(1.0,((x-ax)*dx+(y-ay)*dy)/length2)) if length2>1e-12 else 0.0
+        best=min(best,math.hypot(x-(ax+t*dx),y-(ay+t*dy)))
+    return best
 
 def force_state_values(data):
     """Plugin layout [F, ref δ, actual δ, RL, RR, v, FL, FR, τR, τF]."""

@@ -293,18 +293,24 @@ class NearbyNavigator(ForceNavigator):
                 (nearest,threshold,pose.v),now)
             return
 
-        # Independent real-world progress diagnosis: do not trust odom speed
-        # alone. Previous run reported v=0.12..0.18 m/s for 12 seconds
-        # while the rear axle stayed at (2.34, 1.75), F=15 N. Old hill
-        # assist skipped this case because grade ~0.04 < 0.06/0.10.
-        vref=self.mission.last_reference_v
+        # Actual XY movement, not the velocity predicted by DWA. IMPORTANT:
+        # the watchdog must follow navigation INTENT, not the latest DWA
+        # sample (which can alternate 0.04/0.25 m/s while fully stalled).
+        # The previous gate reset the 1.6s sampling window at every low
+        # sample, yielding XY_progress_speed=nan and F_floor=0 forever.
+        # This branch runs only after map/obstacle hold guards above.
+        selected_vref=self.mission.last_reference_v
         eligible=(not self.dry_run and self.mission.mode in ('DWA','TEB')
-                  and not self.mission.no_safe_rollout
+                  and not self.mission.no_safe_rollout and bool(self.mission.path)
                   and math.hypot(pose.x-self.mission.goal[0],
                                  pose.y-self.mission.goal[1])>
                       self.mission.goal_tolerance)
+        # The path remains active until the goal, even when DWA temporarily
+        # chooses a slower speed. Reversing remains governed by the planner.
+        intent_vref=self.mission.drive_direction*float(
+            self.cfg.get('traction_intent_speed_m_s',0.22))
         raw_floor=self.traction_watch.force_floor(
-            now,pose.x,pose.y,vref,enabled=eligible,
+            now,pose.x,pose.y,intent_vref,enabled=eligible,
             start_N=float(self.cfg.get('traction_start_force_N',65.)),
             ramp_N_per_s=float(self.cfg.get('traction_ramp_N_per_s',22.)),
             max_N=min(self.mission.max_F,float(
@@ -327,7 +333,7 @@ class NearbyNavigator(ForceNavigator):
             # Verify the boosted *physical* force/steering against the known
             # collision and grade map BEFORE allowing the local planner to
             # consider it. The planner also verifies the full 2.5s rollout.
-            direction=1.0 if vref>0 else -1.0
+            direction=1.0 if intent_vref>0 else -1.0
             if not self.mission.rollout_safe(
                 pose,direction*floor,self.mission.last_delta,
                 horizon_s=float(self.cfg.get('recovery_horizon_s',.45))):
@@ -340,10 +346,12 @@ class NearbyNavigator(ForceNavigator):
                 '[XY TRACTION RECOVERY] F_floor=%.1fN '
                 'measured_XY_speed=%.3fm/s odom_v=%+.3fm/s '
                 'wheel_surface=%.3fm/s slope=%.3f '
+                'intent_vref=%+.2f chosen_vref=%+.2f '
                 'slip_possible=%s; obstacle guards ON' % (
                     floor,self.traction_watch.xy_speed,pose.v,
                     self.wheel_surface_speed,
-                    self.mission.grade_for_dynamics(pose),slip_suspected))
+                    self.mission.grade_for_dynamics(pose),
+                    intent_vref,selected_vref,slip_suspected))
         super().on_tick()
         # Actual local trajectory selected by DWA/TEB; never confuse with A*.
         self.publish_local_path()

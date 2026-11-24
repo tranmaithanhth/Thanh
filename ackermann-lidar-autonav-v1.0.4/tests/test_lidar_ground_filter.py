@@ -74,21 +74,22 @@ class TestGroundClassification(unittest.TestCase):
         self.assertEqual(layer.last_filter_stats['dynamic'],1)
 
     def test_elevated_object_on_slope_remains_detectable(self):
-        # Place chassis on rising terrain. Return at x=5.05 is >0.12 m
-        # above map surface, so a raised obstacle must NOT be ground-filtered.
+        # A raised box beside a robot on the slope is OUTSIDE the chassis
+        # footprint; its return must survive both ground and self masks.
         layer=self.new_layer()
         model_x,model_y=4.6,-2.0
         chassis_z=terrain(model_x,model_y)[0]+self.config['height_shift_gazebo_m']+0.05
-        hit_x=model_x+self.config['lidar_mount_x_m']+0.25
+        hit_x=model_x+self.config['lidar_mount_x_m']
+        hit_y=model_y+1.0
         hit_z=chassis_z+self.config['lidar_mount_z_m']
-        ground_z=terrain(hit_x,model_y)[0]+self.config['height_shift_gazebo_m']
+        ground_z=terrain(hit_x,hit_y)[0]+self.config['height_shift_gazebo_m']
         self.assertGreater(hit_z-ground_z,self.config['lidar_ground_tolerance_m'])
         self.assertTrue(layer.update(
-            [0.25],0.0,0.1,0.15,8.0,
+            [1.0],math.pi/2,0.1,0.15,8.0,
             model_x-0.4,model_y,0.0,now=100.0,
             model_pose=(model_x,model_y,chassis_z,0.0,0.0,0.0,1.0)))
         self.assertEqual(len(layer.world_points(now=100.0)),1)
-        self.assertAlmostEqual(layer.nearest(1,now=100.0),0.25)
+        self.assertAlmostEqual(layer.nearest(1,now=100.0),1.0)
 
     def test_ground_height_margin_conservative(self):
         self.assertTrue(is_terrain_return(0.4,0.75,0.12))

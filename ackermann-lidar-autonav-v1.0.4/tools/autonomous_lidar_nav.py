@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 
 import rclpy
+from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import LaserScan
 
 from autonomous_force_nav import ForceNavigator
@@ -27,7 +28,7 @@ class LidarNavigator(ForceNavigator):
         self.mission=DynamicMission(cfg)
         self.layer=LidarObstacleLayer(cfg)
         self.scan_sub=self.create_subscription(
-            LaserScan,cfg.get('lidar_scan_topic','/scan'),self.on_scan,10)
+            LaserScan,cfg.get('lidar_scan_topic','/scan'),self.on_scan,qos_profile_sensor_data)
         self.lidar_last_log=0.0
         self.lidar_last_replan=0.0
         self.lidar_last_scan_report=0.0

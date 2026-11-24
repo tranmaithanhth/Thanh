@@ -1,4 +1,17 @@
-# Ackermann LiDAR Autonav v1.0.4 — ROS 2 Humble / Gazebo Classic 11
+# Ackermann v1.0.4 — ROS 2 Humble / Gazebo Classic 11
+
+> **CẬP NHẬT 24/11/2026: CẤU HÌNH MẶC ĐỊNH ĐÃ BỎ LiDAR.** Toàn bộ
+> hướng dẫn `/scan`/LiDAR bên dưới là tài liệu lịch sử cho bản cũ.
+> Hệ thống mới dùng dữ liệu mô hình Gazebo **chỉ trong bán kính 4 m**
+> và không biết trước tọa độ vật cản. Hãy dùng tài liệu chính:
+> **[README_NEARBY_V104.md](README_NEARBY_V104.md)**.
+> Cần dừng rồi **khởi động lại Gazebo và spawn robot mới**, không chỉ mở
+> lại HMI; đường dẫn lệnh vẫn là `run_world_v104.sh`,
+> `spawn_force_v104.sh`, `auto_drive_v104.sh`, `hmi_v104.sh`.
+
+## Tài liệu cho chế độ LiDAR cũ (không còn là chế độ mặc định)
+
+
 
 **Mục tiêu:** kế thừa toàn bộ robot AWD + lực phát động F + góc lái delta và terrain 3D/tường bao của v1.0.3, thêm cảm biến LiDAR 2D ROS `/scan`, phát hiện vật cản mới, phanh an toàn khi cần và thử lập lại đường A* theo bản đồ vật cản động. **Chỉ mô phỏng và nghiên cứu — chưa đủ điều kiện vận hành robot thật.**
 

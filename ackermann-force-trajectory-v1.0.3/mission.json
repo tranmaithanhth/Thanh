@@ -61,10 +61,16 @@
   "stuck_timeout_s": 12,
   "drive_mode": "all",
   "hill_start_force_N": 175,
-  "hill_start_min_grade": 0.16,
+  "hill_start_min_grade": 0.1,
   "route_clearance_margin_m": 0.35,
   "physical_max_speed_m_s": 1.45,
   "min_progress_force_N": 15,
   "speed_tracking_cost_weight": 4,
-  "overspeed_cost_weight": 14
+  "overspeed_cost_weight": 14,
+  "recovery_after_s": 2,
+  "recovery_min_front_grade": 0.06,
+  "recovery_initial_force_N": 75,
+  "recovery_ramp_N_per_s": 22,
+  "recovery_max_force_N": 180,
+  "recovery_horizon_s": 0.45
 }

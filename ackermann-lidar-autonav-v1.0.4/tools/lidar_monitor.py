@@ -2,8 +2,10 @@
 """Sensor-only diagnostic. Subscribes /scan and /odom; NEVER publishes motor force."""
 from __future__ import annotations
 import argparse
+import json
 import math
 import time
+from pathlib import Path
 
 import rclpy
 from rclpy.qos import qos_profile_sensor_data
@@ -19,11 +21,13 @@ class ScanMonitor(Node):
     def __init__(self):
         super().__init__('ackermann_lidar_monitor')
         self.odom=None
-        self.layer=LidarObstacleLayer({
-            'world_bounds_xy':[-20,20,-20,20],
-            'obstacles_xy_radius':[(4.1,0.3,.75),(7.3,1.15,.72),
-                                   (10.15,.35,.76),(12.4,3.7,.73)]
-        })
+        # Use EXACTLY the same terrain, pose and sensor parameters as HMI
+        # and autonomous planner. The previous hardcoded config omitted
+        # height_shift_gazebo_m, skewing slope classification.
+        config=json.loads((Path(__file__).resolve().parents[1]/
+                           'mission.json').read_text(encoding='utf-8'))
+        self.cfg=config
+        self.layer=LidarObstacleLayer(config)
         self.count=0
         self.last_log=0.0
         self.create_subscription(Odometry,'/ackermann_vehicle/odom',self.on_odom,10)
@@ -42,8 +46,9 @@ class ScanMonitor(Node):
             return
         p=self.odom.pose.pose.position
         yaw=yaw_from_quat(self.odom.pose.pose.orientation)
-        rear_x=p.x-0.4*math.cos(yaw)
-        rear_y=p.y-0.4*math.sin(yaw)
+        rear_offset=float(self.cfg['rear_axle_offset_from_model_origin_m'])
+        rear_x=p.x-rear_offset*math.cos(yaw)
+        rear_y=p.y-rear_offset*math.sin(yaw)
         q=self.odom.pose.pose.orientation
         model_pose=(p.x,p.y,p.z,q.x,q.y,q.z,q.w)
         if not self.layer.update(msg.ranges,msg.angle_min,msg.angle_increment,
@@ -57,7 +62,10 @@ class ScanMonitor(Node):
                 f'[SCAN] packets={self.count} beams={len(msg.ranges)} '
                 f'angle=[{math.degrees(msg.angle_min):.0f},{math.degrees(msg.angle_max):.0f}]deg '
                 f'front={self.layer.nearest(1):.2f}m rear={self.layer.nearest(-1):.2f}m '
-                f'non-static-hit-voxels={len(self.layer.world_points())}; '
+                f'new_obstacles={len(self.layer.world_points())} '
+                f'filtered_ground={self.layer.last_filter_stats["terrain"]} '
+                f'filtered_self={self.layer.last_filter_stats["self"]} '
+                f'filtered_raycast={self.layer.last_filter_stats["ray_ground"]}; '
                 f'frame={msg.header.frame_id}')
 
 

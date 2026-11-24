@@ -191,6 +191,37 @@ def compare_rmse(gazebo,matlab,keys=None):
                              if diffs else math.nan}
     return report
 
+
+def comparison_warnings(gazebo,matlab):
+    """Flag conditions that make a MATLAB/Gazebo RMSE physically misleading.
+
+    The returned messages are diagnostics, NOT an automatic physics match
+    certificate. Full equivalence also requires matching mass, tire/road
+    physics, actuation mode, terrain and controller.
+    """
+    if not gazebo or not matlab:
+        return ['Cần dữ liệu cả hai mô phỏng.']
+    warnings=[]
+    first_g,first_m=gazebo[0],matlab[0]
+    for field,tol,label in (
+        ('x_rear_m',0.25,'X ban đầu'),
+        ('y_rear_m',0.25,'Y ban đầu'),
+        ('v_m_s',0.15,'vận tốc ban đầu')):
+        a=numeric(first_g.get(field));b=numeric(first_m.get(field))
+        if math.isfinite(a) and math.isfinite(b) and abs(a-b)>tol:
+            warnings.append(f'{label} khác nhau {abs(a-b):.2f} (ngưỡng {tol}).')
+    a=numeric(first_g.get('yaw_deg'));b=numeric(first_m.get('yaw_deg'))
+    if math.isfinite(a) and math.isfinite(b):
+        d=abs(yaw_error_deg(a,b))
+        if d>6.0:
+            warnings.append(f'Góc yaw ban đầu lệch {d:.1f}° (ngưỡng 6°).')
+    force=compare_rmse(gazebo,matlab,keys=['F_cmd_N'])['F_cmd_N']
+    if force['n']>=5 and math.isfinite(force['rmse']) and force['rmse']>20.0:
+        warnings.append(
+            f'Lệnh lực quy đổi khác nhau: RMSE={force["rmse"]:.1f} N (>20 N).')
+    return warnings
+
+
 def export_comparison_csv(path,gazebo,matlab,keys=None):
     """Interpolate MATLAB at each measured Gazebo time; label every column."""
     if keys is None:keys=[k for k,_ in COMPARED]

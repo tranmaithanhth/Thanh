@@ -33,8 +33,10 @@ from matplotlib.patches import Circle, Rectangle
 from hmi_data import (
     FIELDS, COMPARED, numeric, quaternion_rpy, force_state_values,
     export_csv, load_matlab_csv, compare_rmse, export_comparison_csv,
+    distance_to_path,
 )
 from lidar_obstacles import LidarObstacleLayer
+from planner_core import terrain
 
 ROOT=Path(__file__).resolve().parents[1]
 CMD='/ackermann_vehicle/force_steer'
@@ -247,6 +249,8 @@ class AckermannHMI(QMainWindow):
             ('wheel','Tốc độ bánh RL/RR/FL/FR'),
             ('lidar','Khoảng cách LiDAR trước/sau'),
             ('goal','Sai số vị trí đích (m)'),
+            ('route','Lệch quỹ đạo A* (m)'),
+            ('grade','Dốc dọc theo hướng xe (°)'),
         ]
         self.metrics={}
         for i,(key,name) in enumerate(names):
@@ -512,6 +516,13 @@ class AckermannHMI(QMainWindow):
         x=p.x-back*math.cos(yaw)
         y=p.y-back*math.sin(yaw)
         goal=self.cfg['goal_xy']
+        _,hx,hy=terrain(x,y)
+        longitudinal_grade=hx*math.cos(yaw)+hy*math.sin(yaw)
+        route_points=[]
+        if self.node.route:
+            route_points=[
+                (rp.pose.position.x,rp.pose.position.y)
+                for rp in self.node.route.poses]
         row={
             't_s':stamp-self.session_zero,'sim_time_s':stamp,
             'x_rear_m':x,'y_rear_m':y,'x_body_m':p.x,'y_body_m':p.y,
@@ -520,6 +531,8 @@ class AckermannHMI(QMainWindow):
             'v_m_s':odom.twist.twist.linear.x,
             'yaw_rate_rad_s':odom.twist.twist.angular.z,
             'goal_error_m':math.hypot(x-goal[0],y-goal[1]),
+            'route_error_m':distance_to_path(x,y,route_points),
+            'road_grade_deg':math.degrees(math.atan(longitudinal_grade)),
             'lidar_front_m':self.layer.nearest(1),
             'lidar_rear_m':self.layer.nearest(-1),
             'lidar_age_s':self.layer.age(),
@@ -530,6 +543,12 @@ class AckermannHMI(QMainWindow):
             time.monotonic()-self.node.state_at<0.6):
             row.update(force_state_values(self.node.state.data))
         else:row.update(force_state_values([]))
+        wheel_keys=('omega_rl_rad_s','omega_rr_rad_s',
+                    'omega_fl_rad_s','omega_fr_rad_s')
+        wheel=[row.get(key,math.nan) for key in wheel_keys]
+        row['wheel_surface_avg_m_s']=(
+            sum(wheel)/4.0*float(self.cfg['wheel_radius_m'])
+            if all(math.isfinite(v) for v in wheel) else math.nan)
         return row
 
     def _update_monitor(self):
@@ -565,6 +584,8 @@ class AckermannHMI(QMainWindow):
         self.metrics['lidar'].setText(
             text_number(row['lidar_front_m'])+' / '+text_number(row['lidar_rear_m'])+' m')
         self.metrics['goal'].setText(text_number(row['goal_error_m']))
+        self.metrics['route'].setText(text_number(row['route_error_m']))
+        self.metrics['grade'].setText(text_number(row['road_grade_deg'],'+.2f'))
 
     def _draw_active_tab(self):
         if not self.samples:return
@@ -645,6 +666,10 @@ class AckermannHMI(QMainWindow):
         self.map_panel.canvas.draw_idle()
 
     def _draw_compare(self):
+        now=time.monotonic()
+        # RMSE computation/6 Matplotlib plots should not run >1Hz in the GUI.
+        if now-self.last_compare_wall<2.0:return
+        self.last_compare_wall=now
         axs=self.compare_panel.axes.flat
         for ax in axs:ax.clear()
         keys=COMPARED[:6]
@@ -683,6 +708,7 @@ class AckermannHMI(QMainWindow):
                 self.reference=load_matlab_csv(
                     path,float(self.cfg['wheel_radius_m']))
                 self.tabs.setCurrentIndex(2)
+                self.last_compare_wall=0.0
                 self._draw_compare()
                 self._log(f'Đã nạp {len(self.reference)} mẫu MATLAB: '+path)
             except Exception as e:QMessageBox.critical(self,'Lỗi CSV MATLAB',str(e))
@@ -707,7 +733,9 @@ class AckermannHMI(QMainWindow):
         folder=QFileDialog.getExistingDirectory(self,'Chọn thư mục xuất PNG',str(ROOT))
         if not folder:return
         try:
-            self._draw_live();self._draw_map();self._draw_compare()
+            self._draw_live();self._draw_map()
+            self.last_compare_wall=0.0
+            self._draw_compare()
             images=[
                 (self.live_panel,'gazebo_time_history.png'),
                 (self.map_panel,'gazebo_trajectory.png'),

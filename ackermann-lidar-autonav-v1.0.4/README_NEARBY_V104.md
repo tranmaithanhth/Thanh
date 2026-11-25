@@ -52,7 +52,7 @@ vật cản mà không xóa terrain/tường/đích. Robot giới hạn **một 
   `libgazebo_ros_state.so` trong bản sao world tạm thời; không sửa terrain
   v1.0.2 hay wall/collision gốc.
 - `run_world_v104.sh`: khởi động world đã bổ sung publisher model states.
-- `spawn_force_v104.sh`: giữ động lực học AWD, bỏ LiDAR trong URDF.
+- `spawn_force_v104.sh`: dùng cấu hình riêng v1.0.4 dẫn động hai bánh sau (RWD), lái hai bánh trước, không gắn LiDAR.
 - `tools/nearby_scene.py`: cảm biến vùng lân cận và nhớ vật đã thấy.
 - `tools/autonomous_nearby_nav.py`: A* chưa biết trước vật cản;
   cập nhật bản đồ khi có đối tượng mới; kiểm tra an toàn/phanh mô phỏng.
@@ -159,7 +159,7 @@ cản trong tầm**, khác với topic không có bản tin (mất dữ liệu).
 
 Các tab/CSV so sánh MATLAB giữ nguyên. CSV Gazebo đổi các trường đo cảm nhận
 thành `nearby_front_m`, `nearby_rear_m`, `nearby_age_s`,
-`nearby_count`. Động lực học (20 kg, 0,15 m bánh, 300 N AWD) không thay đổi.
+`nearby_count`. Khối lượng 20 kg, bán kính bánh 0,15 m và giới hạn lực lệnh 300 N được giữ; hệ dẫn động đổi từ AWD sang **RWD hai bánh sau**.
 
 **Giới hạn:** Cảm biến ảo quan sát trực tiếp pose model từ Gazebo nên
 không có lỗi góc quét, không đo độ cao hay hình dạng thật, không

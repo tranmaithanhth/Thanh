@@ -38,7 +38,7 @@
   "max_runtime_s": 180,
   "replan_after_deviation_m": 2,
   "stuck_timeout_s": 12,
-  "drive_mode": "all",
+  "drive_mode": "rear",
   "hill_start_force_N": 175,
   "hill_start_min_grade": 0.1,
   "route_clearance_margin_m": 0.35,

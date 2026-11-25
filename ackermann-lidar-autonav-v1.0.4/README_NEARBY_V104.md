@@ -22,6 +22,19 @@ Phát hiện vật cản dựa trên **tâm mô hình** và bán kính bao tròn
 mô hình mới quá lớn hoặc có hình dạng dài cần kiểm tra/sửa giá trị này trước
 khi kết luận an toàn. Không biết hình dạng chính xác, không có occlusion.
 
+## Cấu hình dẫn động RWD (2 bánh sau kéo + 2 bánh trước lái)
+
+Bản cập nhật 25/11/2026 chuyển riêng robot Gazebo v1.0.4
+từ `drive_mode=all` sang `drive_mode=rear`. Bánh trước lăn tự do,
+chỉ hai khớp lái trước nhận mô-men điều khiển góc. Toàn bộ A*, DWA,
+TEB và cảm biến vùng 4m vẫn được giữ nguyên. **Robot đã spawn phải
+được xóa/spawn lại mới có hiệu lực.**
+
+Tham khảo **[README_RWD_V104.md](README_RWD_V104.md)** để xem chi tiết
+phân bố mô-men, cập nhật, kiểm tra `force_state` và cách giữ kịch bản
+mô phỏng đang chạy. Giới hạn lực lệnh vẫn 300N, chưa hoàn toàn
+trùng với MATLAB 22Nm.
+
 ## Bộ lập quỹ đạo cục bộ DWA và TEB
 
 Bản cập nhật ROS 2 đã bổ sung **DWA** và **TEB rút gọn** bên cạnh

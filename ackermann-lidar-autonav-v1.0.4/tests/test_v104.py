@@ -2,7 +2,7 @@
 """ROS-free regression tests for v1.0.4 default Nearby, plus legacy LiDAR.
 
 Default navigation is NOT LiDAR: no preloaded obstacle coordinates, nearby
-Gazebo ModelStates, and unchanged 20kg AWD force plugin. Legacy LiDAR filters
+Gazebo ModelStates, and unchanged 20kg force plugin now configured RWD. Legacy LiDAR filters
 remain independently tested as optional regression coverage.
 """
 from __future__ import annotations
@@ -136,7 +136,14 @@ class TestLidarV104(unittest.TestCase):
             self.assertEqual(plugin.get('filename'),'libackermann_force_drive.so')
             self.assertAlmostEqual(float(plugin.findtext('max_force')),
                                    float(cfg['max_drive_force_N']))
-            self.assertEqual(plugin.findtext('drive_mode'),cfg['drive_mode'])
+            self.assertEqual(cfg['drive_mode'],'rear')
+            self.assertEqual(plugin.findtext('drive_mode'),'rear')
+            # Each rear wheel is powered; front wheel roll joints receive 0
+            # applied drive torque while the front steering joints are active.
+            self.assertEqual(len(urdf.findall("link[@name='rear_left_wheel']")),1)
+            self.assertEqual(len(urdf.findall("link[@name='rear_right_wheel']")),1)
+            self.assertEqual(len(urdf.findall("link[@name='front_left_wheel']")),1)
+            self.assertEqual(len(urdf.findall("link[@name='front_right_wheel']")),1)
 
     def test_launcher_and_safety_guards(self):
         run=(BASE/'run_world_v104.sh').read_text()
@@ -149,6 +156,9 @@ class TestLidarV104(unittest.TestCase):
         self.assertIn('prepare_proximity_world.py',run)
         self.assertIn('patch_robot_v104.py',spawn)
         self.assertIn('--no-lidar',spawn)
+        self.assertIn('V104_ROOT/matlab_vehicle_params.json',spawn)
+        self.assertIn("params.get('drive_mode')!='rear'",spawn)
+        self.assertEqual(cfg['drive_mode'],'rear')
         self.assertIn('autonomous_nearby_nav.py',auto)
         self.assertNotIn('autonomous_lidar_nav.py',auto)
         self.assertIn('ModelStates,SCENE_TOPIC',nav)

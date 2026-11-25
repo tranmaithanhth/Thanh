@@ -1,11 +1,30 @@
 #!/usr/bin/env bash
-# Spawn stage3 AWD force robot WITHOUT LiDAR; Gazebo ModelStates virtual nearby sensing.
+# Spawn stage3 RWD Ackermann: 2 REAR DRIVE wheels, 2 FRONT STEERING wheels; NO LiDAR.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BASE="$(cd "$ROOT/../ackermann-ros2-gazebo-terrain-v1.0.2" && pwd)"
 V103_ROOT="$(cd "$ROOT/../ackermann-force-trajectory-v1.0.3" && pwd)"
 WS="${ACKERMANN_WS:-$HOME/ackermann_humble_ws}"
-[[ -f "$V103_ROOT/matlab_vehicle_params.json" ]] || { echo "ERROR: MATLAB vehicle parameters missing at $V103_ROOT/matlab_vehicle_params.json" >&2; exit 1; }
+PARAMS="$ROOT/matlab_vehicle_params.json"
+[[ -f "$PARAMS" ]] || { echo "ERROR: v1.0.4 RWD vehicle parameters missing: $PARAMS" >&2; exit 1; }
+# Pre-spawn guard prevents accidentally restoring AWD or using a different
+# force cap in the planner than the actual Gazebo force plugin.
+python3 - "$ROOT/mission.json" "$PARAMS" <<'PY_RWD'
+import json,math,sys
+from pathlib import Path
+mission=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+params=json.loads(Path(sys.argv[2]).read_text(encoding='utf-8'))
+if params.get('drive_mode')!='rear' or mission.get('drive_mode')!='rear':
+    raise SystemExit("ERROR: Expected 2 driven REAR wheels: drive_mode=rear in both configurations")
+if not math.isclose(float(params['max_drive_force_N']),
+                    float(mission['max_drive_force_N']), rel_tol=0., abs_tol=1e-6):
+    raise SystemExit("ERROR: Gazebo and mission max_drive_force_N mismatch")
+if not math.isclose(float(params['radius_m']),float(mission['wheel_radius_m']),
+                    rel_tol=0.,abs_tol=1e-6):
+    raise SystemExit("ERROR: Gazebo and mission wheel radius mismatch")
+print("[RWD CHECK] REAR wheels driven, FRONT wheels steering only; "
+      f"F_max={params['max_drive_force_N']} N")
+PY_RWD
 SPAWN_X="${ACKERMANN_SPAWN_X:-0.0}"
 SPAWN_Y="${ACKERMANN_SPAWN_Y:--2.0}"
 SPAWN_YAW="${ACKERMANN_SPAWN_YAW:-0.0}"
@@ -64,7 +83,7 @@ TMP="$(mktemp -d)"
 trap '\''rm -rf "$TMP"'\'' EXIT
 xacro "$xacro_file" > "$TMP/full.urdf"
 python3 "$BASE/tools/build_robot_stage.py" --source "$TMP/full.urdf" --output "$TMP/stage3.urdf" --stage 3
-python3 "$V104_ROOT/tools/patch_robot_v104.py" --input "$TMP/stage3.urdf" --output "$TMP/force.urdf" --params "$V103_ROOT/matlab_vehicle_params.json" --no-lidar
+python3 "$V104_ROOT/tools/patch_robot_v104.py" --input "$TMP/stage3.urdf" --output "$TMP/force.urdf" --params "$V104_ROOT/matlab_vehicle_params.json" --no-lidar
 ros2 run gazebo_ros spawn_entity.py -entity ackermann_force_nearby_v104 -file "$TMP/force.urdf" -x "$SPAWN_X" -y "$SPAWN_Y" -z "$SPAWN_Z" -Y "$SPAWN_YAW"
-printf "[OK] Spawned v1.0.4 force robot (NO LiDAR) at X=%s Y=%s Z=%s yaw=%srad.\n" "$SPAWN_X" "$SPAWN_Y" "$SPAWN_Z" "$SPAWN_YAW"
+printf "[OK] Spawned v1.0.4 RWD Ackermann (rear drive, front steering, NO LiDAR) at X=%s Y=%s Z=%s yaw=%srad.\n" "$SPAWN_X" "$SPAWN_Y" "$SPAWN_Z" "$SPAWN_YAW"
 '

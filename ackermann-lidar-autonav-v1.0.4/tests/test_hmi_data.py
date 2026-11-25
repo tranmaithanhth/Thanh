@@ -17,16 +17,16 @@ from hmi_data import (
 )
 
 class TestHmiData(unittest.TestCase):
-    def test_force_state_layout_awd_and_motor_torque(self):
-        d=force_state_values([120.0,0.1,0.09,2.0,2.1,0.3,2.4,2.5,4.5,4.5])
+    def test_force_state_layout_rwd_and_motor_torque(self):
+        d=force_state_values([120.0,0.1,0.09,2.0,2.1,0.3,2.4,2.5,9.0,0.0])
         self.assertEqual(d["F_cmd_N"],120)
         self.assertAlmostEqual(d["delta_ref_deg"],math.degrees(0.1))
         self.assertAlmostEqual(d["delta_actual_deg"],math.degrees(.09))
         self.assertEqual(d["omega_rl_rad_s"],2.0)
         self.assertEqual(d["omega_fl_rad_s"],2.4)
         self.assertAlmostEqual(d["tau_total_Nm"],18.0)
-        self.assertEqual(d["tau_rl_Nm"],4.5)
-        self.assertEqual(d["tau_fr_Nm"],4.5)
+        self.assertEqual(d["tau_rl_Nm"],9.0)
+        self.assertEqual(d["tau_fr_Nm"],0.0)
 
     def test_missing_state_is_missing_not_fabricated_zero(self):
         state=force_state_values([20.0,0.0])

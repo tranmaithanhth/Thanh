@@ -23,8 +23,8 @@
   "tire_vertical_damping_MATLAB_N_s_m": 72,
   "rolling_viscous_MATLAB_N_s_m_each": 0.8,
   "gazebo_tire_coulomb_mu_assumed": 1.1,
-  "note": "MATLAB v1.0.4 reference remains 22 Nm / 146.67 N and is NOT altered. Enhanced Gazebo test mode: total drive torque limit 45 Nm = 300 N at radius 0.15 m, applied equally to all 4 driven wheels (AWD) to improve traction; NOT MATLAB-identical. MATLAB uses non-slip rolling, Gazebo mu=1.1 is an assumed Coulomb coefficient. Tire vertical suspension still differs.",
+  "note": "Gazebo ROS2 v1.0.4: two rear DRIVE wheels (RWD); front wheels FREE-ROLL with two Ackermann steering joints. F_cmd_N max 300 N corresponds to 45 Nm total, split 22.5 Nm per REAR wheel; zero applied driving torque at both FRONT wheels. Kept max force unchanged so only drivetrain configuration differs from prior AWD tests. MATLAB reference is rear drive with 22 Nm total (~146.67 N); torque limits, wheel contact physics and suspension still differ. v1.0.3 historical AWD parameters are unchanged.",
   "matlab_reference_rear_axle_torque_Nm": 22,
   "enhanced_max_total_drive_torque_Nm": 45,
-  "drive_mode": "all"
+  "drive_mode": "rear"
 }

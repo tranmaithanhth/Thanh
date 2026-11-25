@@ -213,7 +213,7 @@ ROLLOUT. Lưu:
 - thời gian tính toán (cần đo thêm khi profiling).
 
 DWA và TEB trong MATLAB cũ dùng **dẫn động cầu sau với lệnh mômen**,
-ROS v1.0.4 dùng **AWD với lực kéo tối đa 300 N**. Chưa thể kết luận
+ROS v1.0.4 hiện dùng **RWD (hai bánh sau dẫn động) với lực kéo tối đa 300 N**. Chưa thể kết luận
 định lượng rằng hai nền tảng có động lực học giống nhau nếu không hiệu
 chỉnh các điều kiện đó.
 

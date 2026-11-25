@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Patch stage-3 Ackermann URDF with force plugin + lightweight Gazebo Classic ray LiDAR."""
+"""Configure 4-wheel Ackermann URDF: rear drive + front steering; optional legacy ray LiDAR."""
 import argparse
 import json
 from pathlib import Path
@@ -146,7 +146,14 @@ def main():
     mass=patch(args.input,args.output,json.loads(args.params.read_text(encoding='utf-8')), use_lidar=not args.no_lidar)
     params = json.loads(args.params.read_text(encoding='utf-8'))
     sensor='none (Gazebo neighborhood)' if args.no_lidar else 'LiDAR 91 rays @5Hz'
-    print(f'[MODEL V1.0.4] mass={mass:.3f}kg, AWD force_cap={params["max_drive_force_N"]:.1f}N, sensor={sensor}')
+    mode=params.get('drive_mode','rear')
+    drive_desc=('2 rear DRIVE wheels / 2 front STEERING wheels' if mode=='rear'
+                else '4-wheel drive (legacy)')
+    torque_per_rear=(params['max_drive_force_N']*params['radius_m']/
+                     (2 if mode=='rear' else 4))
+    print(f'[MODEL V1.0.4] mass={mass:.3f}kg, mode={mode}, '
+          f'{drive_desc}, max_total_force={params["max_drive_force_N"]:.1f}N, '
+          f'max_rear_wheel_torque={torque_per_rear:.2f}Nm, sensor={sensor}')
 
 if __name__=='__main__':
     main()

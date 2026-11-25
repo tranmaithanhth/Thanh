@@ -116,7 +116,7 @@ Riêng góc yaw lấy sai số vòng tròn (wrap ±180°), tránh nhầm -179° 
 
 ### Cảnh báo kỹ thuật về MATLAB và Gazebo
 
-- Mô hình Simulink cũ có `maxTorque=7.5 Nm` cho cầu sau; Gazebo v1.0.4 đang điều khiển **AWD** với tổng mômen tối đa 45 Nm. Chạy nguyên thông số sẽ chỉ phù hợp so sánh định tính.
+- Mô hình Simulink cũ có `maxTorque=7.5 Nm` cho cầu sau; Gazebo v1.0.4 đã chuyển sang **RWD (hai bánh sau dẫn động)** với tổng mômen tối đa 45 Nm. Chạy nguyên thông số sẽ chỉ phù hợp so sánh định tính.
 - Gazebo `F_cmd_N` là **lực phát động quy đổi từ mômen ra lệnh**, `tau_total_Nm` là mômen cấp bánh theo plugin. **KHÔNG phải lực tiếp xúc thật**. MATLAB `RearForceLog(:,1:2)` là lực dọc bánh–đường; không so sánh trực tiếp với `F_cmd_N` hay `tau_total_Nm`.
 - `delta_actual_deg` Gazebo là trung bình góc của hai khớp lái từ plugin, trong khi `psi` MATLAB là góc lái tương đương của mô hình; tại góc lái lớn có thể khác nhau.
 - Hai mô hình phải dùng cùng khối lượng, bán kính bánh, khối lượng quán tính, ma sát, địa hình, thuật toán điều khiển và trạng thái đầu nếu muốn RMSE có ý nghĩa vật lý.

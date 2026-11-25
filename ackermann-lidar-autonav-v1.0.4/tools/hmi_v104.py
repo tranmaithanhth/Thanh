@@ -211,7 +211,7 @@ class AckermannHMI(QMainWindow):
         root.setSpacing(9)
 
         header=QHBoxLayout()
-        head=QLabel('ACKERMANN  /  FORCE + GAZEBO NEARBY  /  v1.0.4')
+        head=QLabel('ACKERMANN RWD  /  2 BÁNH SAU DẪN ĐỘNG · 2 BÁNH TRƯỚC LÁI  /  v1.0.4')
         head.setObjectName('header')
         header.addWidget(head,stretch=1)
         self.mode_label=QLabel('OBSERVE')

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# v1.0.4 reuses the VERIFIED v1.0.3 C++ AWD force plugin.
+# v1.0.4 reuses the VERIFIED v1.0.3 C++ plugin in rear-drive mode (2 rear drive + 2 front steer).
 # Do not change workspace symlinks, ROS distro, or rebuild Gazebo unnecessarily.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,6 +22,6 @@ if [[ ! -f "$FORCE_LIB" ]]; then
  echo "ERROR: C++ force plugin still missing: $FORCE_LIB" >&2; exit 1
 fi
 echo "[OK] ROS 2 Humble and Gazebo Classic world-state plugin found."
-echo "[OK] Existing AWD force plugin: $FORCE_LIB"
-echo "[OK] v1.0.4 code uses the v1.0.3 force controller unchanged."
+echo "[OK] Force plugin supports drive_mode=rear (RWD): $FORCE_LIB"
+echo "[OK] v1.0.4 switches URDF plugin setting only; no C++ rebuild needed."
 python3 -m unittest discover -s "$ROOT/tests" -v

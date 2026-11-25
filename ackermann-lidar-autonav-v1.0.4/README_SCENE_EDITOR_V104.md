@@ -30,7 +30,7 @@ Không xóa hoặc spawn robot khi HMI đang **MANUAL/AUTO**, có controller
 ngoài phát lệnh `/ackermann_vehicle/force_steer`, hoặc HMI còn giữ
 publisher phát xung dừng 0. Kịch bản xóa/spawn robot bắt buộc qua
 dịch vụ Gazebo và tiến trình `spawn_force_v104.sh`. Lệnh spawn tái sử
-dụng URDF stage 3, khối lượng 20 kg, dẫn động AWD và lực tối đa 300 N.
+dụng URDF stage 3, khối lượng 20 kg, dẫn động RWD hai bánh sau, hai bánh trước đánh lái và lực tối đa 300 N.
 Cao độ Z được tính theo địa hình MATLAB; góc yaw dùng đơn vị **độ**
 trong HMI, đổi sang **radian** khi gửi đến script.
 
